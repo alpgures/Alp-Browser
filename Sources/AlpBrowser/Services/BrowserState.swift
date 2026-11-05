@@ -507,7 +507,9 @@ public final class BrowserState: ObservableObject {
     /// - For temporary tabs: closes and removes the tab immediately.
     public func handleTabTrailingButtonAction(for tab: TabItem) {
         if tab.isPinned {
-            WebViewPool.shared.hibernateTab(id: tab.id)
+            Task {
+                await WebViewPool.shared.hibernateTab(id: tab.id)
+            }
             if let sIdx = activeSpaceIndex, spaces[sIdx].activeTabID == tab.id {
                 spaces[sIdx].activeTabID = spaces[sIdx].todayTabs.first?.id
             }

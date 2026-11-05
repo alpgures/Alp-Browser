@@ -694,6 +694,41 @@ struct FavoriteTileView: View {
     }
 }
 
+struct NewTabButtonRow: View {
+    @EnvironmentObject var browserState: BrowserState
+    let theme: SpaceTheme
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            browserState.openCommandBar(prefilledWithCurrentURL: false)
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isHovered ? theme.foregroundColor : theme.secondaryForegroundColor)
+                    .frame(width: 16, height: 16)
+
+                Text("New Tab")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isHovered ? theme.foregroundColor : theme.secondaryForegroundColor)
+
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isHovered ? theme.hoverBackground : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help("New Tab (⌘T)")
+    }
+}
+
 struct AlpIconButtonStyle: ButtonStyle {
     let theme: SpaceTheme
 

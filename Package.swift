@@ -2,17 +2,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "ArcBrowser",
+    name: "AlpBrowser",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "ArcBrowser", targets: ["ArcBrowser"])
+        .executable(name: "AlpBrowser", targets: ["AlpBrowser"])
     ],
     targets: [
         .executableTarget(
-            name: "ArcBrowser",
-            path: "Sources/ArcBrowser"
+            name: "AlpBrowser",
+            path: "Sources/AlpBrowser"
         )
     ]
 )

@@ -465,12 +465,26 @@ public struct SiteControlCenterPopoverView: View {
                     .foregroundStyle(.white)
 
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                    // uBlock Origin / Adblock Tile
+                    // Real Installed Extensions from AlpExtensionManager
+                    ForEach(AlpExtensionManager.shared.installedExtensions) { ext in
+                        extensionTile(
+                            icon: "puzzlepiece.extension.fill",
+                            color: ext.isEnabled ? Color.accentColor : Color.white.opacity(0.4),
+                            badge: nil,
+                            isPinned: ext.isEnabled
+                        ) {
+                            Task {
+                                await AlpExtensionManager.shared.toggleExtension(id: ext.id)
+                            }
+                        }
+                    }
+
+                    // uBlock Origin / Built-in Adblock Tile
                     extensionTile(
                         icon: "shield.fill",
                         color: Color(red: 0.95, green: 0.35, blue: 0.55),
                         badge: nil,
-                        isPinned: true
+                        isPinned: browserState.adBlockerEnabled
                     ) {
                         browserState.adBlockerEnabled.toggle()
                         browserState.scheduleSave()

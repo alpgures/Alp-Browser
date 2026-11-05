@@ -61,7 +61,7 @@ final class AlpBrowserTests: XCTestCase {
         let canvasTab = TabItem(
             title: "Project Ideas",
             urlString: "alp://canvas/notes",
-            kind: .canvas
+            kind: .canvas(UUID())
         )
         XCTAssertEqual(canvasTab.simplifiedDomain, "Project Ideas")
     }

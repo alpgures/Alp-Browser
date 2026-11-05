@@ -223,7 +223,7 @@ public enum AlpSidebarImporter {
             folderCounter += 1
             let folder = FolderItem(
                 title: folderTitle,
-                isExpanded: children.count <= 8,
+                isExpanded: false,
                 children: children
             )
             return .folder(folder)

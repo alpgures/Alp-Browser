@@ -20,6 +20,7 @@ public final class BrowserState: ObservableObject {
     @Published public var spaces: [AlpSpace] = []
     @Published public var favorites: [TabItem] = []
     @Published public var activeSpaceID: UUID?
+    @Published public var spaceTransitionDirection: Int = 1
 
     // MARK: - UI Chrome & Overlays State
     @Published public var isSidebarCollapsed: Bool = false
@@ -637,6 +638,10 @@ public final class BrowserState: ObservableObject {
 
     public func switchToSpace(at index: Int) {
         guard spaces.indices.contains(index) else { return }
+        let currentIdx = activeSpaceIndex ?? 0
+        if index != currentIdx {
+            spaceTransitionDirection = (index > currentIdx) ? 1 : -1
+        }
         activeSpaceID = spaces[index].id
         scheduleSave()
     }
@@ -644,10 +649,12 @@ public final class BrowserState: ObservableObject {
     public func switchToNextSpace(forward: Bool) {
         guard !spaces.isEmpty else { return }
         let currentIdx = activeSpaceIndex ?? 0
+        spaceTransitionDirection = forward ? 1 : -1
         let nextIdx = forward
             ? (currentIdx + 1) % spaces.count
             : (currentIdx - 1 + spaces.count) % spaces.count
-        switchToSpace(at: nextIdx)
+        activeSpaceID = spaces[nextIdx].id
+        scheduleSave()
     }
 
     // MARK: - Canvas & Notes Management

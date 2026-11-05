@@ -12,9 +12,9 @@ import AppKit
 public struct SidebarView: View {
     @EnvironmentObject var browserState: BrowserState
 
-    @State private var copiedURLFeedback = false
     @State private var renamingTabID: UUID?
     @State private var renameDraft: String = ""
+    @State private var isHoveringUrlPill = false
 
     private var theme: SpaceTheme {
         browserState.activeTheme
@@ -24,23 +24,23 @@ public struct SidebarView: View {
 
     public var body: some View {
         VStack(spacing: 8) {
-            // 1. Top Navigation Row (Clearance for macOS traffic lights)
+            // 1. Top Navigation Row (Seamless with macOS traffic lights)
             topNavigationRow
-                .padding(.top, 8)
-                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.horizontal, 6)
 
-            // 2. Command / URL Bar Pill
+            // 2. Command / URL Bar Pill with hover "..." menu
             urlCommandPill
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 6)
 
-            // 3. Favorites Grid (Top pinned apps)
+            // 3. Favorites Grid (2x2 layout for 4 bookmarks)
             if !browserState.favorites.isEmpty {
                 favoritesGrid
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 6)
                     .padding(.top, 2)
             }
 
-            // 4. Interactive Horizontal Space Pager
+            // 4. Interactive Horizontal Space Pager with smooth slide transition
             SidebarSpaceContentView(
                 renamingTabID: $renamingTabID,
                 renameDraft: $renameDraft
@@ -49,16 +49,12 @@ public struct SidebarView: View {
             // 5. Media Mini-Player Card (when background tab is playing audio)
             if let audioTab = browserState.backgroundAudioPlayingTab {
                 sidebarMediaMiniPlayer(for: audioTab)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 6)
             }
 
-            // 6. Memory Monitor Pill
-            memoryFooter
-                .padding(.horizontal, 10)
-
-            // 7. Bottom Space Switcher & Library Bar
+            // 6. Bottom Space Switcher & Library Bar (Stable during sidebar resizing)
             bottomSpaceSwitcherBar
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 6)
                 .padding(.bottom, 10)
         }
         .foregroundStyle(theme.foregroundColor)
@@ -67,9 +63,11 @@ public struct SidebarView: View {
     // MARK: - 1. Top Navigation Row
 
     private var topNavigationRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             if !browserState.isSidebarCollapsed {
-                Spacer().frame(width: 64)
+                // Exact width clearance for macOS window traffic lights (dots)
+                Spacer()
+                    .frame(width: 68)
             }
 
             Button {
@@ -79,7 +77,7 @@ public struct SidebarView: View {
                 }
             } label: {
                 Image(systemName: "sidebar.left")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12.5, weight: .medium))
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(AlpIconButtonStyle(theme: theme))
@@ -91,7 +89,7 @@ public struct SidebarView: View {
                 browserState.goBackInActiveTab()
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11.5, weight: .semibold))
                     .frame(width: 24, height: 24)
                     .opacity(browserState.canGoBackInActiveTab ? 1.0 : 0.35)
             }
@@ -103,7 +101,7 @@ public struct SidebarView: View {
                 browserState.goForwardInActiveTab()
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11.5, weight: .semibold))
                     .frame(width: 24, height: 24)
                     .opacity(browserState.canGoForwardInActiveTab ? 1.0 : 0.35)
             }
@@ -117,18 +115,20 @@ public struct SidebarView: View {
                 }
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11.5, weight: .semibold))
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(AlpIconButtonStyle(theme: theme))
             .help("Reload (⌘R)")
         }
+        .frame(height: 26)
     }
 
-    // MARK: - 2. URL Command Pill
+    // MARK: - 2. Clean URL Command Pill with Hover "..." Menu
 
     private var urlCommandPill: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
+            // Lock / Shield Icon
             Button {
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
                     browserState.isSiteControlCenterPresented.toggle()
@@ -137,11 +137,12 @@ public struct SidebarView: View {
                 Image(systemName: browserState.activeTab?.urlString.hasPrefix("https") == true ? "lock.fill" : "slider.horizontal.3")
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(theme.secondaryForegroundColor)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
             }
             .buttonStyle(.plain)
             .help("Site Security & Privacy Controls")
 
+            // Domain / URL Title Area
             Button {
                 browserState.openCommandBar(prefilledWithCurrentURL: true)
             } label: {
@@ -157,59 +158,77 @@ public struct SidebarView: View {
             }
             .buttonStyle(.plain)
 
-            Button {
-                if let url = browserState.activeTab?.urlString {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url, forType: .string)
-                    copiedURLFeedback = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        copiedURLFeedback = false
+            // Hover "..." Action Menu (Arc-style)
+            Menu {
+                Button {
+                    if let url = browserState.activeTab?.urlString {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url, forType: .string)
+                        browserState.showToast("Copied link to clipboard")
                     }
+                } label: {
+                    Label("Copy Link", systemImage: "link")
+                }
+
+                Button {
+                    browserState.addSplitPane()
+                } label: {
+                    Label("Add Split View", systemImage: "rectangle.split.2x1")
+                }
+
+                Button {
+                    browserState.isStyleStudioPresented.toggle()
+                } label: {
+                    Label("Customize Page Style", systemImage: "bolt.fill")
+                }
+
+                Button {
+                    browserState.isSiteControlCenterPresented.toggle()
+                } label: {
+                    Label("Site Controls & Shields", systemImage: "shield")
+                }
+
+                Divider()
+
+                Button {
+                    if let id = browserState.activeTabID {
+                        WebViewPool.shared.reload(in: id)
+                    }
+                } label: {
+                    Label("Reload Page", systemImage: "arrow.clockwise")
                 }
             } label: {
-                Image(systemName: copiedURLFeedback ? "checkmark" : "link")
-                    .font(.system(size: 10.5, weight: .semibold))
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(theme.secondaryForegroundColor)
+                    .frame(width: 18, height: 18)
             }
-            .buttonStyle(.plain)
-            .help("Copy Current URL (⌘⇧C)")
-
-            Button {
-                browserState.addSplitPane()
-            } label: {
-                Image(systemName: "rectangle.split.2x1")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(theme.secondaryForegroundColor)
-            }
-            .buttonStyle(.plain)
-            .help("Add Split View (⌃⇧=)")
-
-            Button {
-                browserState.isStyleStudioPresented.toggle()
-            } label: {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(theme.effectiveAccentColor)
-            }
-            .buttonStyle(.plain)
-            .help("Customize Page Style")
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .opacity(isHoveringUrlPill ? 1.0 : 0.0)
+            .animation(.easeInOut(duration: 0.15), value: isHoveringUrlPill)
+            .help("Page Options")
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(theme.pillBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .stroke(theme.pillBorderColor, lineWidth: 0.8)
                 )
         )
+        .onHover { isHoveringUrlPill = $0 }
     }
 
-    // MARK: - 3. Favorites Grid
+    // MARK: - 3. Favorites Grid (2 Columns -> 2x2 for 4 Bookmarks)
 
     private var favoritesGrid: some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
+        let columns = [
+            GridItem(.flexible(), spacing: 6),
+            GridItem(.flexible(), spacing: 6)
+        ]
         return LazyVGrid(columns: columns, spacing: 6) {
             ForEach(browserState.favorites) { tab in
                 FavoriteTileView(
@@ -258,8 +277,8 @@ public struct SidebarView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(theme.pillBackground)
@@ -267,72 +286,42 @@ public struct SidebarView: View {
         )
     }
 
-    // MARK: - 6. Memory Footer
-
-    private var memoryFooter: some View {
-        HStack {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 5.5, height: 5.5)
-                Text(String(format: "%.0f MB RAM", browserState.currentProcessMemoryMB))
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(theme.secondaryForegroundColor)
-            }
-
-            Spacer()
-
-            Button {
-                Task {
-                    await browserState.hibernateAllBackgroundTabsNow()
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "moon.zzz.fill")
-                        .font(.system(size: 9.5))
-                    Text("Hibernate")
-                        .font(.system(size: 10, weight: .medium))
-                }
-                .foregroundStyle(theme.secondaryForegroundColor)
-            }
-            .buttonStyle(.plain)
-            .help("Unload Background Tabs (0 MB RAM)")
-        }
-        .padding(.horizontal, 4)
-    }
-
-    // MARK: - 7. Bottom Space Switcher & Library Bar
+    // MARK: - 6. Bottom Space Switcher & Library Bar (Stable during sidebar resizing)
 
     private var bottomSpaceSwitcherBar: some View {
-        HStack(spacing: 8) {
-            Button {
-                browserState.isLibrarySheetPresented = true
-            } label: {
-                Image(systemName: "folder")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: 24, height: 24)
+        HStack(spacing: 4) {
+            // Left: Library and Settings
+            HStack(spacing: 2) {
+                Button {
+                    browserState.isLibrarySheetPresented = true
+                } label: {
+                    Image(systemName: "folder")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(AlpIconButtonStyle(theme: theme))
+                .help("Library (Archive, Canvas, Notes, Styles)")
+
+                Button {
+                    browserState.isSettingsPresented = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(AlpIconButtonStyle(theme: theme))
+                .help("Settings & App Icons (⌘,)")
             }
-            .buttonStyle(AlpIconButtonStyle(theme: theme))
-            .help("Library (Archive, Canvas, Notes, Styles)")
+            .fixedSize()
 
-            Button {
-                browserState.isSettingsPresented = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(AlpIconButtonStyle(theme: theme))
-            .help("Settings & App Icons")
+            Spacer(minLength: 4)
 
-            Spacer()
-
-            // Space Indicator Pills
-            HStack(spacing: 6) {
+            // Center: Space Indicator Pills
+            HStack(spacing: 4) {
                 ForEach(Array(browserState.spaces.enumerated()), id: \.element.id) { index, space in
                     let isSelected = (browserState.activeSpaceID == space.id)
                     Button {
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                        withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
                             browserState.switchToSpace(at: index)
                         }
                     } label: {
@@ -352,9 +341,11 @@ public struct SidebarView: View {
                     .help("\(space.title) Space")
                 }
             }
+            .fixedSize()
 
-            Spacer()
+            Spacer(minLength: 4)
 
+            // Right: New Space / Canvas / Note Menu
             Menu {
                 Button("New Space") {
                     let newSpace = AlpSpace(
@@ -379,7 +370,7 @@ public struct SidebarView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .bold))
-                    .frame(width: 24, height: 24)
+                    .frame(width: 26, height: 26)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -388,7 +379,7 @@ public struct SidebarView: View {
     }
 }
 
-// MARK: - Space Content ScrollView (Pinned + Active/Today Tabs)
+// MARK: - Space Content ScrollView with Smooth Horizontal Slide Pager Animation
 
 struct SidebarSpaceContentView: View {
     @EnvironmentObject var browserState: BrowserState
@@ -401,68 +392,80 @@ struct SidebarSpaceContentView: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 4) {
-                // Pinned Items Section
-                if !browserState.activeSpace.pinnedNodes.isEmpty {
-                    ForEach(browserState.activeSpace.pinnedNodes) { node in
-                        SidebarNodeRowView(
-                            node: node,
+            ZStack(alignment: .topLeading) {
+                let currentSpace = browserState.activeSpace
+
+                VStack(alignment: .leading, spacing: 3) {
+                    // Pinned Items Section
+                    if !currentSpace.pinnedNodes.isEmpty {
+                        ForEach(currentSpace.pinnedNodes) { node in
+                            SidebarNodeRowView(
+                                node: node,
+                                renamingTabID: $renamingTabID,
+                                renameDraft: $renameDraft,
+                                theme: theme
+                            )
+                        }
+                    }
+
+                    // Section Divider
+                    HStack {
+                        Text("ACTIVE TABS")
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(theme.secondaryForegroundColor)
+                            .tracking(0.6)
+                        Spacer()
+                        Button {
+                            browserState.openNewTab(urlString: "https://www.google.com")
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundStyle(theme.secondaryForegroundColor)
+                        }
+                        .buttonStyle(.plain)
+                        .help("New Tab (⌘T)")
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.top, 8)
+                    .padding(.bottom, 2)
+
+                    // Today Tabs
+                    ForEach(currentSpace.todayTabs) { tab in
+                        TabRowItemView(
+                            tab: tab,
+                            isPinned: false,
+                            isSelected: browserState.activeTabID == tab.id,
                             renamingTabID: $renamingTabID,
                             renameDraft: $renameDraft,
                             theme: theme
                         )
                     }
-                }
 
-                // Section Divider
-                HStack {
-                    Text("ACTIVE TABS")
-                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                        .foregroundStyle(theme.secondaryForegroundColor)
-                        .tracking(0.6)
-                    Spacer()
-                    Button {
-                        browserState.openNewTab(urlString: "https://www.google.com")
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 9.5, weight: .bold))
-                            .foregroundStyle(theme.secondaryForegroundColor)
-                    }
-                    .buttonStyle(.plain)
-                    .help("New Tab (⌘T)")
-                }
-                .padding(.horizontal, 10)
-                .padding(.top, 10)
-                .padding(.bottom, 2)
-
-                // Today Tabs
-                ForEach(browserState.activeSpace.todayTabs) { tab in
-                    TabRowItemView(
-                        tab: tab,
-                        isPinned: false,
-                        isSelected: browserState.activeTabID == tab.id,
-                        renamingTabID: $renamingTabID,
-                        renameDraft: $renameDraft,
-                        theme: theme
-                    )
-                }
-
-                if browserState.activeSpace.todayTabs.isEmpty && browserState.activeSpace.pinnedNodes.isEmpty {
-                    VStack(spacing: 8) {
-                        Text("No open tabs")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(theme.secondaryForegroundColor)
-                        Button("Open Tab") {
-                            browserState.openNewTab(urlString: "https://www.google.com")
+                    if currentSpace.todayTabs.isEmpty && currentSpace.pinnedNodes.isEmpty {
+                        VStack(spacing: 8) {
+                            Text("No open tabs")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(theme.secondaryForegroundColor)
+                            Button("Open Tab") {
+                                browserState.openNewTab(urlString: "https://www.google.com")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 32)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
                 }
+                .id(currentSpace.id)
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: browserState.spaceTransitionDirection > 0 ? .trailing : .leading).combined(with: .opacity),
+                        removal: .move(edge: browserState.spaceTransitionDirection > 0 ? .leading : .trailing).combined(with: .opacity)
+                    )
+                )
             }
-            .padding(.horizontal, 8)
+            .animation(.spring(response: 0.30, dampingFraction: 0.85), value: browserState.activeSpaceID)
+            .padding(.horizontal, 2)
         }
     }
 }
@@ -538,8 +541,8 @@ struct FolderRowItemView: View {
 
                     Spacer()
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -553,7 +556,7 @@ struct FolderRowItemView: View {
                             renameDraft: $renameDraft,
                             theme: theme
                         )
-                        .padding(.leading, 14)
+                        .padding(.leading, 12)
                     }
                 }
             }
@@ -573,7 +576,7 @@ struct TabRowItemView: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             // Favicon or Kind Icon
             Group {
                 if let fav = FaviconCache.shared.favicon(for: tab.urlString) {
@@ -620,31 +623,33 @@ struct TabRowItemView: View {
 
             Spacer()
 
-            // Audio Indicator
+            // Audio Playing Indicator
             if tab.isPlayingAudio {
                 Image(systemName: "speaker.wave.2.fill")
                     .font(.system(size: 9.5))
                     .foregroundStyle(theme.effectiveAccentColor)
             }
 
-            // Close Button (Fixed: always "xmark", never minus!)
+            // Close / Unload Button:
+            // When currently on a tab (isSelected): shows minus sign ("minus")!
+            // When hovering over an unfocused tab (!isSelected): shows X ("xmark")!
             if isHovered || isSelected {
                 Button {
                     browserState.handleTabTrailingButtonAction(for: tab)
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9.5, weight: .bold))
+                    Image(systemName: isSelected ? "minus" : "xmark")
+                        .font(.system(size: isSelected ? 10.5 : 9.5, weight: .bold))
                         .foregroundStyle(theme.secondaryForegroundColor)
                         .frame(width: 16, height: 16)
                 }
                 .buttonStyle(.plain)
-                .help("Close Tab (⌘W)")
+                .help(isSelected ? "Unload Tab" : "Close Tab (⌘W)")
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(isSelected ? theme.selectionBackground : (isHovered ? theme.hoverBackground : Color.clear))
         )
         .contentShape(Rectangle())
@@ -696,14 +701,14 @@ struct FavoriteTileView: View {
                     Image(nsImage: fav)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 18, height: 18)
+                        .frame(width: 20, height: 20)
                 } else {
                     Image(systemName: "globe")
-                        .font(.system(size: 13))
+                        .font(.system(size: 15))
                         .foregroundStyle(theme.foregroundColor)
                 }
             }
-            .frame(height: 38)
+            .frame(height: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

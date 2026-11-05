@@ -232,25 +232,23 @@ public final class TrackpadGestureManager: ObservableObject {
 
     private func handleSidebarHorizontalSwipe() {
         let state = BrowserState.shared
-        let spaceCount = state.spaces.count
-        guard spaceCount > 1 else { return }
-
         sidebarSwipeOffset = accumulatedDeltaX
-        let threshold: CGFloat = 80.0
+        let threshold: CGFloat = 65.0
 
-        if accumulatedDeltaX < -threshold {
+        if accumulatedDeltaX > threshold {
+            // Two-finger swipe right on sidebar reveals Library (Archive, Canvas, Notes, Downloads)
+            hasCommittedInCurrentGesture = true
+            sidebarSwipeOffset = 0
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                state.isLibrarySheetPresented = true
+            }
+            performHaptic()
+        } else if accumulatedDeltaX < -threshold && state.spaces.count > 1 {
+            // Two-finger swipe left switches to next space
             hasCommittedInCurrentGesture = true
             spaceTransitionDirection = 1
             withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
                 state.switchToNextSpace(forward: true)
-                sidebarSwipeOffset = 0
-            }
-            performHaptic()
-        } else if accumulatedDeltaX > threshold {
-            hasCommittedInCurrentGesture = true
-            spaceTransitionDirection = -1
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
-                state.switchToNextSpace(forward: false)
                 sidebarSwipeOffset = 0
             }
             performHaptic()

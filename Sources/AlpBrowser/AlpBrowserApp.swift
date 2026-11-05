@@ -25,6 +25,13 @@ public struct AlpBrowserApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    browserState.isSettingsPresented = true
+                }
+                .keyboardShortcut(",", modifiers: [.command])
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("Command Bar / New Tab") {
                     browserState.openCommandBar(prefilledWithCurrentURL: false)
@@ -221,10 +228,12 @@ struct AlpWindowAccessor: NSViewRepresentable {
             guard let window = view.window else { return }
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
-            window.styleMask.insert(.fullSizeContentView)
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             window.isOpaque = false
             window.backgroundColor = .clear
             window.toolbar = nil
+            window.titlebarSeparatorStyle = .none
+            window.isMovableByWindowBackground = true
             if window.frame.width < 1100 {
                 window.setContentSize(NSSize(width: 1320, height: 840))
                 window.center()

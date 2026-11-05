@@ -168,6 +168,7 @@ public struct MainBrowserWindow: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .ignoresSafeArea(.all)
         .sheet(isPresented: $browserState.isLibrarySheetPresented) {
             LibrarySheetView()
                 .environmentObject(browserState)
@@ -229,22 +230,11 @@ public struct AlpSpaceBackgroundView: View {
     }
 
     public var body: some View {
-        ZStack {
-            // Clean gradient fill
-            LinearGradient(
-                colors: theme.renderedGradientColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            // Procedural subtle grain overlay
-            if let grain = AlpAssetLoader.shared.textureImage(named: "grain") {
-                Image(nsImage: grain)
-                    .resizable(resizingMode: .tile)
-                    .opacity(theme.grainIntensity * 0.12)
-                    .blendMode(.overlay)
-            }
-        }
+        LinearGradient(
+            colors: theme.renderedGradientColors,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 }
 

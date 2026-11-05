@@ -486,6 +486,27 @@ public final class BrowserState: ObservableObject {
         let trimmed = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        if trimmed.hasPrefix("alp://") {
+            isCommandBarPresented = false
+            let command = trimmed.replacingOccurrences(of: "alp://", with: "").lowercased()
+            switch command {
+            case "settings", "preferences", "extensions":
+                isSettingsPresented = true
+                return
+            case "library", "archive", "downloads", "canvases", "notes":
+                isLibrarySheetPresented = true
+                return
+            case "theme", "themes":
+                isThemePickerPresented = true
+                return
+            case "style", "styles", "boost":
+                isStyleStudioPresented = true
+                return
+            default:
+                break
+            }
+        }
+
         let resolvedURL = resolveInputToURLString(trimmed)
         if openInNewTab || activeTabID == nil {
             openNewTab(urlString: resolvedURL, title: trimmed, inBackground: false)
@@ -498,7 +519,7 @@ public final class BrowserState: ObservableObject {
     public func resolveInputToURLString(_ input: String) -> String {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
-           ["http", "https", "file", "about"].contains(scheme) {
+           ["http", "https", "file", "about", "alp"].contains(scheme) {
             return trimmed
         }
         if !trimmed.contains(" ") && (trimmed.contains(".") || trimmed.hasPrefix("localhost")) {

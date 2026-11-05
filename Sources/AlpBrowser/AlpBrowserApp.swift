@@ -350,6 +350,28 @@ public final class AlpAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelega
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Every quit route (⌘Q, Alp Browser > Quit, Dock > Quit) arrives here. The first ask shows the card and
+    /// cancels; ⌘Q or Quit pressed while the card is up confirms. Shutdown, restart and log-out are never blocked.
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let state = BrowserState.shared
+        if state.isQuitConfirmationPresented { return .terminateNow }
+        guard state.warnBeforeQuitting, !Self.isSystemInitiatedQuit,
+              NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) else { return .terminateNow }
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
+            state.isQuitConfirmationPresented = true
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        return .terminateCancel
+    }
+
+    /// True when the quit Apple event came from the system ('shut', 'rest', 'logo') rather than the user.
+    private static var isSystemInitiatedQuit: Bool {
+        let reasonKey: AEKeyword = 0x7768793F   // 'why?'
+        guard let reason = NSAppleEventManager.shared().currentAppleEvent?
+            .attributeDescriptor(forKeyword: reasonKey)?.enumCodeValue else { return false }
+        return [0x73687574, 0x72657374, 0x6C6F676F].contains(reason)   // shut, rest, logo
+    }
+
     public func applicationWillTerminate(_ notification: Notification) {
         BrowserState.shared.saveImmediately()
     }

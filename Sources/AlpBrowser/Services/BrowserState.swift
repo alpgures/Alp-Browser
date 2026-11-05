@@ -43,6 +43,16 @@ public final class BrowserState: ObservableObject {
     @Published public var isThemePickerPresented: Bool = false
     @Published public var isLibrarySheetPresented: Bool = false
     @Published public var isSettingsPresented: Bool = false
+    /// True while the "Quit Alp Browser?" card is up. The app delegate owns the decision; this only drives the view.
+    @Published public var isQuitConfirmationPresented: Bool = false
+    /// Settings toggle. Kept in UserDefaults (not the sidebar store) so it applies before any state has loaded.
+    @Published public var warnBeforeQuitting: Bool = UserDefaults.standard.object(forKey: "alp_warn_before_quitting") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(warnBeforeQuitting, forKey: "alp_warn_before_quitting") }
+    }
+    /// Tabs and spaces named on the quit card: Today tabs plus favorites; pinned tabs are not "open".
+    public var quitSummary: (tabs: Int, spaces: Int) {
+        (spaces.reduce(favorites.count) { $0 + $1.todayTabs.count }, spaces.count)
+    }
     @Published public var isSiteControlCenterPresented: Bool = false
     /// Section the Library should show when it next appears (set by `openLibrary`, consumed by the view).
     public var requestedLibrarySection: LibraryRailSection?

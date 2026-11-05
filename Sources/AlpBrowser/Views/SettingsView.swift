@@ -114,6 +114,14 @@ public struct SettingsView: View {
     private var generalAndIconsTab: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
+                Toggle("Warn before quitting", isOn: $browserState.warnBeforeQuitting)
+                    .font(.system(size: 12.5, weight: .medium))
+                Text("Pressing ⌘Q asks for confirmation first. Press ⌘Q again to quit right away.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text("App Icon")
                     .font(.system(size: 14, weight: .bold))
 

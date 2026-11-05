@@ -170,6 +170,13 @@ public struct MainBrowserWindow: View {
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
             }
 
+            // 9. Quit confirmation (⌘Q / menu / Dock). Topmost so nothing can sit above it.
+            if browserState.isQuitConfirmationPresented {
+                QuitConfirmationView()
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+                    .zIndex(100)
+            }
+
             // 8. Toast Notification Pill
             if let toast = browserState.toastMessage {
                 VStack {
@@ -210,7 +217,9 @@ public struct MainBrowserWindow: View {
             }
         }
         .onExitCommand {
-            if browserState.isCommandBarPresented {
+            if browserState.isQuitConfirmationPresented {
+                withAnimation(.easeOut(duration: 0.15)) { browserState.isQuitConfirmationPresented = false }
+            } else if browserState.isCommandBarPresented {
                 browserState.isCommandBarPresented = false
             } else if browserState.isLibrarySheetPresented {
                 browserState.isLibrarySheetPresented = false

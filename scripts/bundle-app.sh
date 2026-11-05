@@ -96,6 +96,14 @@ cat > "${CONTENTS_DIR}/Info.plist" << 'EOF'
                 <string>https</string>
             </array>
         </dict>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>Alp Internal URL</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>alp</string>
+            </array>
+        </dict>
     </array>
 </dict>
 </plist>

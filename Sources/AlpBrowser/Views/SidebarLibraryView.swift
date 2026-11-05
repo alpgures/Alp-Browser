@@ -826,8 +826,9 @@ struct ActiveDownloadRow: View {
     let theme: SpaceTheme
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(nsImage: NSWorkspace.shared.icon(forFileType: item.fileURL.pathExtension))
+        let ut = UTType(filenameExtension: item.fileURL.pathExtension) ?? .item
+        return HStack(spacing: 8) {
+            Image(nsImage: NSWorkspace.shared.icon(for: ut))
                 .resizable()
                 .frame(width: 22, height: 22)
 

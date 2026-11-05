@@ -76,7 +76,7 @@ public final class BrowserState: ObservableObject {
     private var syncDebounceTask: Task<Void, Never>?
     private var periodicSyncTimer: Timer?
     /// Quiet time after the last change before a background sync runs.
-    private static let syncDebounceSeconds: TimeInterval = 30
+    nonisolated private static let syncDebounceSeconds: TimeInterval = 30
     /// Shortest gap between two background attempts, so a failing server is not retried on every edit.
     private static let minAutoSyncGapSeconds: TimeInterval = 60
     /// Background sync interval (a safety net for changes that did not go through `scheduleSave`).
@@ -1700,7 +1700,7 @@ public final class BrowserState: ObservableObject {
     public func saveImmediately(inBackground: Bool = false) {
         let store = buildPersistedStore()
         let url = storeFileURL
-        let write = {
+        let write: @Sendable () -> Void = {
             do {
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

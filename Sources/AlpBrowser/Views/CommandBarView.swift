@@ -142,7 +142,7 @@ public struct CommandBarView: View {
         // Spaces and sidebar
         list.append(act("next space forward", "arrow.right.circle", "Next Space", "⌘⌥→") { withAnimation { bs.switchToNextSpace(forward: true) } })
         list.append(act("previous space back", "arrow.left.circle", "Previous Space", "⌘⌥←") { withAnimation { bs.switchToNextSpace(forward: false) } })
-        list.append(act("new space create", "plus.square.on.square", "New Space") { withAnimation { bs.createSpace() } })
+        list.append(act("new space create", "plus.square.on.square", "New Space") { withAnimation { _ = bs.createSpace() } })
         list.append(act("new folder create pinned", "folder.badge.plus", "New Folder") { bs.createFolder() })
         list.append(act("sidebar toggle hide show collapse", "sidebar.left", "Toggle Sidebar", "⌘S") {
             withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {

@@ -16,3 +16,7 @@
 # Logs & temp
 /tmp/
 *.log
+
+# Distribution artifacts
+dist/
+*.dmg

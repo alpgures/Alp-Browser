@@ -21,7 +21,11 @@ public struct AlpBrowserApp: App {
             MainBrowserWindow()
                 .environmentObject(browserState)
                 .frame(minWidth: 780, minHeight: 520)
+                .ignoresSafeArea()
                 .background(AlpWindowAccessor())
+                .onOpenURL { url in
+                    browserState.handleCommandBarInput(url.absoluteString, openInNewTab: false)
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
@@ -348,22 +352,43 @@ public final class AlpAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelega
     }
 }
 
+private final class AlpWindowAccessorView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window = self.window {
+            configure(window: window)
+        }
+    }
+
+    private func configure(window: NSWindow) {
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.toolbar = nil
+        window.titlebarSeparatorStyle = .none
+        window.isMovableByWindowBackground = true
+        if window.frame.width < 1100 {
+            window.setContentSize(NSSize(width: 1320, height: 840))
+            window.center()
+        }
+    }
+}
+
 struct AlpWindowAccessor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
+        let view = AlpWindowAccessorView()
         DispatchQueue.main.async {
-            guard let window = view.window else { return }
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.toolbar = nil
-            window.titlebarSeparatorStyle = .none
-            window.isMovableByWindowBackground = true
-            if window.frame.width < 1100 {
-                window.setContentSize(NSSize(width: 1320, height: 840))
-                window.center()
+            if let window = view.window {
+                window.titleVisibility = .hidden
+                window.titlebarAppearsTransparent = true
+                window.styleMask.insert(.fullSizeContentView)
+                window.isOpaque = false
+                window.backgroundColor = .clear
+                window.toolbar = nil
+                window.titlebarSeparatorStyle = .none
+                window.isMovableByWindowBackground = true
             }
         }
         return view

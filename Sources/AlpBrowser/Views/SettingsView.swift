@@ -192,6 +192,26 @@ public struct SettingsView: View {
                 .frame(width: 140)
                 .onChange(of: browserState.autoHibernateMinutes) { _, _ in browserState.scheduleSave() }
             }
+
+            Divider().padding(.vertical, 2)
+
+            Text("Data Import")
+                .font(.system(size: 14, weight: .bold))
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Import from Arc")
+                        .font(.system(size: 12, weight: .medium))
+                    Text(AlpSidebarImporter.isArcInstalledDataAvailable ? "Detected local Arc spaces, bookmarks, and extensions." : "No local Arc profile found.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Import Spaces & Data") {
+                    browserState.importFromInstalledArcBrowser()
+                }
+                .disabled(!AlpSidebarImporter.isArcInstalledDataAvailable)
+            }
         }
     }
 
@@ -503,7 +523,7 @@ public struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("End-to-End Encrypted Vault")
                         .font(.system(size: 14, weight: .bold))
-                    Text("Your spaces, pinned tabs, folders, easels, notes, and boosts are sealed on this Mac with AES-256-GCM authenticated encryption. Zero browsing history or unencrypted data ever leaves your device.")
+                    Text("Your spaces, pinned tabs, folders, canvases, notes, and styles are sealed on this Mac with AES-256-GCM authenticated encryption. Zero browsing history or unencrypted data ever leaves your device.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }

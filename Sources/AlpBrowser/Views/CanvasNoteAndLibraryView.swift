@@ -1,5 +1,5 @@
 //
-//  EaselNoteAndLibraryView.swift
+//  CanvasNoteAndLibraryView.swift
 //  Alp Browser
 //
 //  Freeform easel board and note editor tab views.

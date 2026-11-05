@@ -354,7 +354,7 @@ struct ViewportZapperBannerView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "bolt.fill")
+            Image(systemName: "scissors")
                 .foregroundStyle(.white)
             Text("Click any element on the page to hide it")
                 .font(.system(size: 12, weight: .semibold))

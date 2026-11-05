@@ -25,6 +25,9 @@ jobs:
     - name: Run tests
       run: swift test -v
 
+    - name: Install create-dmg
+      run: brew install create-dmg
+
     - name: Package DMG Installer
       run: ./scripts/package-dmg.sh
 

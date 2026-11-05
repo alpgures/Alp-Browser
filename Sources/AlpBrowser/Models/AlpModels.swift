@@ -418,6 +418,9 @@ public struct TabItem: Identifiable, Codable, Equatable, Hashable, Sendable {
     }
 
     public var simplifiedDomain: String {
+        if urlString.lowercased().hasPrefix("chrome-extension://") {
+            return "Extension"
+        }
         guard let url = URL(string: urlString), let host = url.host else {
             return urlString
         }

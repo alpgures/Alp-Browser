@@ -389,7 +389,7 @@ public struct SpaceThemePickerView: View {
             .frame(maxHeight: 520)
         }
         .padding(18)
-        .frame(width: 480)
+        .frame(width: 580)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(red: 0.12, green: 0.12, blue: 0.15))

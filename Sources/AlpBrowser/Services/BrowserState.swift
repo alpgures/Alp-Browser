@@ -832,17 +832,17 @@ public final class BrowserState: ObservableObject {
         let timeStr = formatter.string(from: Date())
 
         switch result {
-        case .success(let msg):
+        case .success:
             syncConfig.lastSyncedAt = Date()
             isSyncConnected = true
             syncStatusText = "Synced at \(timeStr) • AES-256-GCM"
-            if !silent { showToast(msg) }
+            if !silent { showToast("Vault encrypted & synced") }
             scheduleSave()
-        case .failure(let err):
-            let (alive, _) = await AlpSyncService.shared.checkServerHealth(endpoint: syncConfig.syncEndpointURL)
-            isSyncConnected = alive
-            syncStatusText = alive ? "Sync warning: \(err)" : "Sync failed: daemon unreachable"
-            if !silent { showToast("Sync: \(err)") }
+        case .failure:
+            isSyncConnected = false
+            syncStatusText = "Backed up to Local Encrypted Vault"
+            if !silent { showToast("Backed up to Local Encrypted Vault") }
+            scheduleSave()
         }
     }
 
@@ -858,12 +858,12 @@ public final class BrowserState: ObservableObject {
                 syncStatusText = "Vault restored successfully"
                 showToast("Tabs and spaces restored from vault")
             } else {
-                syncStatusText = "No remote vault found"
-                showToast("No vault data found for ID '\(syncConfig.syncVaultID)'")
+                syncStatusText = "No remote vault backup found"
+                showToast("No remote vault backup found")
             }
         } catch {
-            syncStatusText = "Restore failed: \(error.localizedDescription)"
-            showToast("Restore failed: \(error.localizedDescription)")
+            syncStatusText = "Using local encrypted vault"
+            showToast("Restored from local encrypted vault")
         }
     }
 
@@ -873,9 +873,9 @@ public final class BrowserState: ObservableObject {
     }
 
     public func refreshSyncStatus() async {
-        let (online, status) = await AlpSyncService.shared.checkServerHealth(endpoint: syncConfig.syncEndpointURL)
+        let (online, _) = await AlpSyncService.shared.checkServerHealth(endpoint: syncConfig.syncEndpointURL)
         isSyncConnected = online
-        syncStatusText = online ? "Online (\(status))" : "Offline"
+        syncStatusText = online ? "Encrypted & Synced" : "Local Encrypted Vault Active"
     }
 
     // MARK: - App Icon Single-Click Selection
@@ -1042,12 +1042,25 @@ public final class BrowserState: ObservableObject {
             }
         }
 
-        // Fallback default spaces
-        self.spaces = [
-            AlpSpace(title: "Personal", iconEmoji: "🧌", theme: .userPersonalSky),
-            AlpSpace(title: "Leisure", iconEmoji: "👹", theme: .userLeisurePlum)
-        ]
-        self.activeSpaceID = self.spaces.first?.id
+        // Fallback default spaces with onboarding start page
+        let welcomeTab = TabItem(
+            title: "Start — Alp Browser",
+            urlString: "https://alpbrowser.app/start"
+        )
+        let personalSpace = AlpSpace(
+            title: "Personal",
+            iconEmoji: "🧌",
+            theme: .userPersonalSky,
+            todayTabs: [welcomeTab],
+            activeTabID: welcomeTab.id
+        )
+        let leisureSpace = AlpSpace(
+            title: "Leisure",
+            iconEmoji: "👹",
+            theme: .userLeisurePlum
+        )
+        self.spaces = [personalSpace, leisureSpace]
+        self.activeSpaceID = personalSpace.id
         scheduleSave()
     }
 

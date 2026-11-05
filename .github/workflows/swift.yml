@@ -20,3 +20,13 @@ jobs:
       run: swift build -v
     - name: Run tests
       run: swift test -v
+
+    - name: Package DMG Installer
+      run: ./scripts/package-dmg.sh
+
+    - name: Upload DMG Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Alp-Browser-macOS-arm64
+        path: dist/Alp-Browser-macOS-arm64.dmg
+        if-no-files-found: error

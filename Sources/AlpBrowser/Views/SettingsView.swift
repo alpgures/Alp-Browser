@@ -500,7 +500,7 @@ public struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("End-to-End Encrypted Vault")
                         .font(.system(size: 14, weight: .bold))
-                    Text("Your spaces, pinned tabs, folders, easels, notes, and boosts are sealed on this Mac with AES-256-GCM authenticated encryption. Zero browsing history or unencrypted data ever leaves your device.")
+                    Text("Your spaces, pinned tabs, folders, canvases, notes, and styles are sealed on this Mac with AES-256-GCM authenticated encryption. Zero browsing history or unencrypted data ever leaves your device.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }

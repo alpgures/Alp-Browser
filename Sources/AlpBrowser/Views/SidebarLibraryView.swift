@@ -11,9 +11,9 @@ import SwiftUI
 public enum LibraryRailSection: String, CaseIterable, Identifiable {
     case media = "Media"
     case downloads = "Downloads"
-    case easels = "Easels"
+    case canvases = "Canvases"
     case spaces = "Spaces"
-    case boosts = "Boosts"
+    case styles = "Styles"
     case archive = "Archived Tabs"
 
     public var id: String { rawValue }
@@ -22,9 +22,9 @@ public enum LibraryRailSection: String, CaseIterable, Identifiable {
         switch self {
         case .media: return "photo.on.rectangle"
         case .downloads: return "arrow.down.circle"
-        case .easels: return "pencil.tip.crop.circle"
+        case .canvases: return "pencil.tip.crop.circle"
         case .spaces: return "square.3.layers.3d"
-        case .boosts: return "sparkles"
+        case .styles: return "sparkles"
         case .archive: return "archivebox"
         }
     }
@@ -34,6 +34,16 @@ public struct SidebarLibraryView: View {
     @EnvironmentObject var browserState: BrowserState
     @State private var selectedSection: LibraryRailSection = .archive
     @State private var searchQuery: String = ""
+    @State private var downloadFiles: [URL] = []
+    @State private var archiveFilter: ArchiveFilter = .all
+
+    enum ArchiveFilter: String, CaseIterable, Identifiable {
+        case all = "All Time"
+        case day = "Last 24 Hours"
+        case week = "Last 7 Days"
+        case older = "Older"
+        var id: String { rawValue }
+    }
 
     private var theme: SpaceTheme {
         browserState.activeTheme
@@ -52,7 +62,14 @@ public struct SidebarLibraryView: View {
                 .frame(maxWidth: .infinity)
         }
         .foregroundStyle(theme.foregroundColor)
-        .onAppear { Self.setWindowTrafficLights(hidden: true) }
+        .onAppear {
+            Self.setWindowTrafficLights(hidden: true)
+            reloadDownloads()
+        }
+        .onChange(of: selectedSection) { _, _ in
+            searchQuery = ""
+            if selectedSection == .downloads { reloadDownloads() }
+        }
         .onDisappear { Self.setWindowTrafficLights(hidden: false) }
     }
 
@@ -181,8 +198,18 @@ public struct SidebarLibraryView: View {
                 )
 
                 if selectedSection == .archive {
-                    Button {
-                        // Filter action
+                    Menu {
+                        ForEach(ArchiveFilter.allCases) { option in
+                            Button {
+                                archiveFilter = option
+                            } label: {
+                                if archiveFilter == option {
+                                    Label(option.rawValue, systemImage: "checkmark")
+                                } else {
+                                    Text(option.rawValue)
+                                }
+                            }
+                        }
                     } label: {
                         HStack(spacing: 3) {
                             Image(systemName: "line.3.horizontal.decrease.circle")
@@ -190,7 +217,7 @@ public struct SidebarLibraryView: View {
                             Text("Filter")
                                 .font(.system(size: 10.5, weight: .medium))
                         }
-                        .foregroundStyle(theme.secondaryForegroundColor)
+                        .foregroundStyle(archiveFilter == .all ? theme.secondaryForegroundColor : theme.effectiveAccentColor)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 5)
                         .background(
@@ -198,7 +225,9 @@ public struct SidebarLibraryView: View {
                                 .fill(theme.pillBackground)
                         )
                     }
-                    .buttonStyle(.plain)
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
                 }
             }
             .padding(.top, 10)
@@ -210,12 +239,12 @@ public struct SidebarLibraryView: View {
                 switch selectedSection {
                 case .archive:
                     archiveListView
-                case .easels:
-                    easelsListView
+                case .canvases:
+                    canvasesListView
                 case .downloads:
                     downloadsListView
-                case .boosts:
-                    boostsListView
+                case .styles:
+                    stylesListView
                 case .media:
                     mediaListView
                 case .spaces:
@@ -229,9 +258,9 @@ public struct SidebarLibraryView: View {
     private var searchPlaceholder: String {
         switch selectedSection {
         case .archive: return "Search Archive..."
-        case .easels: return "Search Easels..."
+        case .canvases: return "Search Canvases..."
         case .downloads: return "Search Downloads..."
-        case .boosts: return "Search Boosts..."
+        case .styles: return "Search Styles..."
         case .media: return "Search Media..."
         case .spaces: return "Search..."
         }
@@ -240,13 +269,22 @@ public struct SidebarLibraryView: View {
     // MARK: - Archive List View (Grouped by Today, Yesterday, Previous 7 Days)
 
     private var filteredArchivedTabs: [ArchivedTab] {
-        if searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
-            return browserState.archivedTabs
+        let now = Date()
+        var tabs = browserState.archivedTabs.filter { tab in
+            switch archiveFilter {
+            case .all: return true
+            case .day: return now.timeIntervalSince(tab.archivedAt) <= 86_400
+            case .week: return now.timeIntervalSince(tab.archivedAt) <= 7 * 86_400
+            case .older: return now.timeIntervalSince(tab.archivedAt) > 7 * 86_400
+            }
         }
-        let q = searchQuery.lowercased()
-        return browserState.archivedTabs.filter {
-            $0.title.lowercased().contains(q) || $0.urlString.lowercased().contains(q)
+        if !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+            let q = searchQuery.lowercased()
+            tabs = tabs.filter {
+                $0.title.lowercased().contains(q) || $0.urlString.lowercased().contains(q)
+            }
         }
+        return tabs
     }
 
     private var archiveListView: some View {
@@ -301,12 +339,12 @@ public struct SidebarLibraryView: View {
         }
     }
 
-    // MARK: - Easels List View
+    // MARK: - Canvases List View
 
-    private var easelsListView: some View {
+    private var canvasesListView: some View {
         VStack(alignment: .leading, spacing: 4) {
             if browserState.canvases.isEmpty {
-                Text("No easels yet")
+                Text("No canvases yet")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.secondaryForegroundColor)
                     .padding()
@@ -344,29 +382,34 @@ public struct SidebarLibraryView: View {
 
     // MARK: - Downloads List View
 
+    private func reloadDownloads() {
+        guard let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
+            downloadFiles = []
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
+            let files = (try? FileManager.default.contentsOfDirectory(at: downloadsURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])) ?? []
+            let dated: [(URL, Date)] = files.compactMap { url in
+                guard let v = try? url.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { return nil }
+                return (url, v.contentModificationDate ?? .distantPast)
+            }
+            let sorted = dated.sorted { $0.1 > $1.1 }.prefix(100).map { $0.0 }
+            DispatchQueue.main.async { downloadFiles = Array(sorted) }
+        }
+    }
+
     private var recentDownloads: [URL] {
-        guard let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else { return [] }
-        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
-        guard let files = try? FileManager.default.contentsOfDirectory(at: downloadsURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
-            return []
-        }
-        let regularFiles = files.filter { url in
-            (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
-        }
-        let sorted = regularFiles.sorted {
-            let d1 = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
-            let d2 = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
-            return d1 > d2
-        }
         if searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
-            return Array(sorted.prefix(25))
+            return Array(downloadFiles.prefix(25))
         }
         let q = searchQuery.lowercased()
-        return sorted.filter { $0.lastPathComponent.lowercased().contains(q) }
+        return downloadFiles.filter { $0.lastPathComponent.lowercased().contains(q) }
     }
 
     private var downloadsListView: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let files = recentDownloads
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Recent Downloads")
                     .font(.system(size: 13, weight: .bold))
@@ -384,13 +427,13 @@ public struct SidebarLibraryView: View {
             }
             .padding(.horizontal, 4)
 
-            if recentDownloads.isEmpty {
+            if files.isEmpty {
                 Text("No downloads found")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.secondaryForegroundColor)
                     .padding()
             } else {
-                ForEach(recentDownloads, id: \.self) { fileURL in
+                ForEach(files, id: \.self) { fileURL in
                     DownloadItemRow(fileURL: fileURL, theme: theme)
                 }
             }
@@ -398,12 +441,12 @@ public struct SidebarLibraryView: View {
         .padding(.vertical, 4)
     }
 
-    // MARK: - Boosts (Styles) List View
+    // MARK: - Styles List View
 
-    private var boostsListView: some View {
+    private var stylesListView: some View {
         VStack(alignment: .leading, spacing: 6) {
             if browserState.styles.isEmpty {
-                Text("No custom site boosts created yet")
+                Text("No custom site styles created yet")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.secondaryForegroundColor)
                     .padding()
@@ -414,7 +457,7 @@ public struct SidebarLibraryView: View {
                             Text(style.domain)
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(theme.foregroundColor)
-                            Text("\(style.zappedSelectors.count) zapped elements")
+                            Text("\(style.zappedSelectors.count) hidden elements")
                                 .font(.system(size: 10))
                                 .foregroundStyle(theme.secondaryForegroundColor)
                         }

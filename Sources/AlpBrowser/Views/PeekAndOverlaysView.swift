@@ -365,7 +365,7 @@ public struct SpaceThemePickerView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("Arc Space Theme Studio", systemImage: "paintpalette.fill")
+                Label("Space Theme Studio", systemImage: "paintpalette.fill")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
 

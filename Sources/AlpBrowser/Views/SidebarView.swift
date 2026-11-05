@@ -326,7 +326,7 @@ public struct SidebarView: View {
 
                 Spacer(minLength: 0)
 
-                // Trailing: "+" (New Space / Folder / Easel / Note)
+                // Trailing: "+" (New Space / Folder / Canvas / Note)
                 Menu {
                     Button("New Space") {
                         let newSpace = AlpSpace(
@@ -338,7 +338,7 @@ public struct SidebarView: View {
                         browserState.activeSpaceID = newSpace.id
                         browserState.scheduleSave()
                     }
-                    Button("New Easel") {
+                    Button("New Canvas") {
                         browserState.createNewCanvas()
                     }
                     Button("New Note") {

@@ -30,6 +30,7 @@ public struct CommandBarView: View {
         let isTabSwitch: Bool
         let isActionRow: Bool
         let shortcutBadge: String?
+        let trailingLabel: String?
         let action: () -> Void
 
         init(
@@ -39,6 +40,7 @@ public struct CommandBarView: View {
             isTabSwitch: Bool = false,
             isActionRow: Bool = false,
             shortcutBadge: String? = nil,
+            trailingLabel: String? = nil,
             action: @escaping () -> Void
         ) {
             self.icon = icon
@@ -47,6 +49,7 @@ public struct CommandBarView: View {
             self.isTabSwitch = isTabSwitch
             self.isActionRow = isActionRow
             self.shortcutBadge = shortcutBadge
+            self.trailingLabel = trailingLabel
             self.action = action
         }
     }
@@ -64,10 +67,10 @@ public struct CommandBarView: View {
             list.append(
                 CommandSuggestion(
                     icon: isLikelyURL ? "globe" : "magnifyingglass",
-                    title: isLikelyURL ? trimmed : "\(trimmed) — Google Search",
+                    title: trimmed,
                     isTabSwitch: false,
                     isActionRow: false,
-                    shortcutBadge: openInCurrentTab ? "Open ↵" : "New Tab ↵",
+                    trailingLabel: isLikelyURL ? "Open Link" : "Search Google",
                     action: {
                         browserState.handleCommandBarInput(trimmed, openInNewTab: !openInCurrentTab)
                     }
@@ -123,9 +126,9 @@ public struct CommandBarView: View {
                 browserState.isCommandBarPresented = false
                 browserState.addSplitPane()
             }),
-            ("easel canvas board draw", "pencil.tip.crop.circle", "New Easel", nil, {
+            ("canvas easel board draw", "pencil.tip.crop.circle", "New Canvas", nil, {
                 browserState.isCommandBarPresented = false
-                browserState.createNewCanvas(title: trimmed.isEmpty ? "Untitled Easel" : trimmed)
+                browserState.createNewCanvas(title: trimmed.isEmpty ? "Untitled Canvas" : trimmed)
             }),
             ("note markdown text editor", "note.text", "New Note", nil, {
                 browserState.isCommandBarPresented = false
@@ -135,7 +138,7 @@ public struct CommandBarView: View {
                 browserState.isCommandBarPresented = false
                 browserState.isThemePickerPresented = true
             }),
-            ("boost style css zapper customize", "wand.and.stars", "New Boost…", nil, {
+            ("style boost css snip zapper customize", "wand.and.stars", "New Page Style…", nil, {
                 browserState.isCommandBarPresented = false
                 browserState.isStyleStudioPresented = true
             }),
@@ -196,16 +199,16 @@ public struct CommandBarView: View {
                 }
 
             VStack(spacing: 0) {
-                // Top Search Input Row (Matches Arc: magnifyingglass, query field, info.circle on right)
-                HStack(spacing: 11) {
+                // Top input row: leading glyph + large borderless field
+                HStack(spacing: 12) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 13.5, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.65))
-                        .frame(width: 20, height: 20)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 22, height: 22)
 
-                    TextField("Search or Enter URL...", text: $query)
+                    TextField("Search or Enter URL…", text: $query)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 15.5, weight: .medium))
+                        .font(.system(size: 18, weight: .regular))
                         .foregroundStyle(.white)
                         .focused($isInputFocused)
                         .onChange(of: query) { _, _ in
@@ -232,14 +235,17 @@ public struct CommandBarView: View {
                         }
 
                     Spacer(minLength: 4)
-
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.48))
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
+                .padding(.bottom, 14)
+
+                if !suggestions.isEmpty {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(height: 1)
+                        .padding(.bottom, 8)
+                }
 
                 // Single-line Suggestion Rows (No divider line, fits all rows cleanly without clipping)
                 if !suggestions.isEmpty {
@@ -262,13 +268,13 @@ public struct CommandBarView: View {
                                     Spacer(minLength: 12)
 
                                     // Trailing "Switch to Tab [→]" or Shortcut Badge
-                                    if item.isTabSwitch {
+                                    if item.isTabSwitch || item.trailingLabel != nil {
                                         HStack(spacing: 8) {
-                                            Text("Switch to Tab")
+                                            Text(item.trailingLabel ?? "Switch to Tab")
                                                 .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                                                 .foregroundStyle(isSelected ? .white : .white.opacity(0.45))
 
-                                            Image(systemName: "arrow.right")
+                                            Image(systemName: item.isTabSwitch ? "arrow.right" : "return")
                                                 .font(.system(size: 10, weight: .bold))
                                                 .foregroundStyle(isSelected ? selectionBarColor : .white.opacity(0.65))
                                                 .frame(width: 19, height: 19)
@@ -290,9 +296,9 @@ public struct CommandBarView: View {
                                     }
                                 }
                                 .padding(.horizontal, 10)
-                                .frame(height: 36)
+                                .frame(height: 38)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
                                         .fill(isSelected ? selectionBarColor : Color.clear)
                                 )
                                 .contentShape(Rectangle())
@@ -309,17 +315,24 @@ public struct CommandBarView: View {
                     .padding(.bottom, 8)
                 }
             }
-            .frame(width: 560)
+            .frame(width: 620)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(red: 0.095, green: 0.095, blue: 0.105))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(0.62))
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(browserState.activeTheme.primaryColor.swiftUIColor.opacity(0.10))
+                }
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.55), radius: 28, y: 12)
-            .padding(.bottom, 80)
+            .shadow(color: .black.opacity(0.45), radius: 32, y: 14)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.top, 150)
         }
         .onExitCommand {
             browserState.isCommandBarPresented = false
@@ -328,6 +341,13 @@ public struct CommandBarView: View {
             query = browserState.commandBarInitialQuery
             isInputFocused = true
             selectedIndex = 0
+
+            // ⌘L pre-fills the current URL; select it so typing replaces it.
+            if !browserState.commandBarInitialQuery.isEmpty {
+                DispatchQueue.main.async {
+                    (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
+                }
+            }
 
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 if event.keyCode == 53 { // ESC key

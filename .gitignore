@@ -19,3 +19,5 @@ dist/
 # Logs & temp
 /tmp/
 *.log
+dist/
+*.dmg

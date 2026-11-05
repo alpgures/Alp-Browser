@@ -28,10 +28,11 @@ A featherweight, native macOS browser built from the ground up in **SwiftUI + Ap
 ## Building & Running
 
 ```bash
-# Build & register application bundle
+# Build the native macOS application bundle
 ./scripts/bundle-app.sh
 open "Alp Browser.app"
 
-# Or package a distributable compressed macOS .dmg installer (2.9 MB)
+# Or package a distributable compressed macOS .dmg installer (2.8 MB)
 ./scripts/package-dmg.sh
+# Generates dist/Alp-Browser-macOS-arm64.dmg
 ```

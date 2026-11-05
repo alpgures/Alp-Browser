@@ -328,14 +328,13 @@ public struct SidebarView: View {
 
     // MARK: - 6. Bottom Space Switcher & Library Bar (Stable during sidebar resizing)
 
-    /// Bottom bar: a single Library button on the leading edge,
-    /// the space switcher centred (active space shows its icon, inactive
-    /// spaces collapse to dimmed dots that reveal their icon on hover), and a
-    /// lone "+" on the trailing edge. No settings gear, no menu chevron.
+    /// Bottom bar: Library (folder) and Settings (gearshape) on the leading edge,
+    /// the space switcher in the center (active space in pill frame, inactive spaces showing icon),
+    /// and a "+ ⌵" on the trailing edge. Matches Arc screenshot ergonomics.
     private var bottomSpaceSwitcherBar: some View {
         ZStack {
-            // Centre: space switcher (true centre of the sidebar, independent of side buttons)
-            HStack(spacing: 2) {
+            // Centre: space switcher
+            HStack(spacing: 4) {
                 ForEach(Array(browserState.spaces.enumerated()), id: \.element.id) { index, space in
                     SpaceSwitcherIcon(
                         space: space,
@@ -364,26 +363,38 @@ public struct SidebarView: View {
                     }
                 }
             }
-            .padding(.horizontal, 34)
+            .padding(.horizontal, 68)
 
-            HStack(spacing: 0) {
-                // Leading: Library
+            HStack(spacing: 4) {
+                // Leading: Library (folder)
                 Button {
                     withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
                         browserState.isLibrarySheetPresented = true
                     }
                 } label: {
-                    Image(systemName: "archivebox")
+                    Image(systemName: "folder")
                         .font(.system(size: 13, weight: .medium))
-                        .frame(width: 28, height: 28)
+                        .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(AlpIconButtonStyle(theme: theme))
                 .help("Library")
 
+                // Leading: Settings (gearshape)
+                Button {
+                    browserState.isSettingsPresented = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(AlpIconButtonStyle(theme: theme))
+                .help("Settings (⌘,)")
+
                 Spacer(minLength: 0)
 
-                // Trailing: "+" (New Space / Folder / Easel / Note)
+                // Trailing: "+ ⌵" (New Space / Folder / Easel / Note)
                 Menu {
                     Button("New Space") {
                         withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
@@ -404,11 +415,16 @@ public struct SidebarView: View {
                         browserState.isThemePickerPresented = true
                     }
                 } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(theme.secondaryForegroundColor)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
+                    HStack(spacing: 2) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 12.5, weight: .medium))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .foregroundStyle(theme.secondaryForegroundColor)
+                    .frame(height: 24)
+                    .padding(.horizontal, 4)
+                    .contentShape(Rectangle())
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -423,8 +439,8 @@ public struct SidebarView: View {
 
 // MARK: - Space Switcher Icon
 
-/// Active space: its emoji at full strength. Inactive space: a small dimmed
-/// dot that morphs into the space's emoji while hovered.
+/// Active space: framed with a soft pill background and subtle stroke.
+/// Inactive space: displays its icon emoji with subtle opacity and hover highlight.
 struct SpaceSwitcherIcon: View {
     let space: AlpSpace
     let isActive: Bool
@@ -435,29 +451,23 @@ struct SpaceSwitcherIcon: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                if isActive || isHovered {
-                    Text(space.iconEmoji)
-                        .font(.system(size: 14))
-                        .opacity(isActive ? 1.0 : 0.85)
-                        .transition(.scale(scale: 0.5).combined(with: .opacity))
-                } else {
-                    Circle()
-                        .fill(theme.secondaryForegroundColor.opacity(0.55))
-                        .frame(width: 7, height: 7)
-                        .transition(.scale(scale: 0.5).combined(with: .opacity))
-                }
-            }
-            .frame(width: 24, height: 28)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isHovered && !isActive ? theme.hoverBackground : Color.clear)
-            )
-            .contentShape(Rectangle())
+            Text(space.iconEmoji)
+                .font(.system(size: 14))
+                .opacity(isActive ? 1.0 : (isHovered ? 1.0 : 0.82))
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(isActive ? theme.pillBackground : (isHovered ? theme.hoverBackground : Color.clear))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(isActive ? theme.pillBorderColor : Color.clear, lineWidth: 0.8)
+                        )
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.14)) { isHovered = hovering }
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
         }
         .help(space.title)
     }

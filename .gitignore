@@ -12,6 +12,9 @@
 # Swift Package Manager & Build
 .build/
 .swiftpm/
+build/
+dist/
+*.dmg
 
 # Logs & temp
 /tmp/

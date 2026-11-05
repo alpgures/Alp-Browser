@@ -85,6 +85,14 @@ public struct CanvasBoardView: View {
                                 .font(.system(size: 12, weight: .medium))
                         }
                         .buttonStyle(.bordered)
+
+                        Button {
+                            pickImageFromDisk()
+                        } label: {
+                            Label("Image", systemImage: "photo")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
                     }
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
@@ -100,6 +108,32 @@ public struct CanvasBoardView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+    }
+
+    private func pickImageFromDisk() {
+        let panel = NSOpenPanel()
+        panel.title = "Select Image for Canvas"
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            addImageElement(from: url)
+        }
+    }
+
+    private func addImageElement(from fileURL: URL) {
+        guard let idx = canvasIndex else { return }
+        let count = Double(browserState.canvases[idx].elements.count)
+        let el = AlpCanvasElement(
+            kind: .image,
+            text: fileURL.lastPathComponent,
+            urlString: fileURL.path,
+            x: 120 + (count * 28).truncatingRemainder(dividingBy: 380),
+            y: 120 + (count * 24).truncatingRemainder(dividingBy: 260),
+            width: 260,
+            height: 200,
+            color: RGBAColor(red: 0.15, green: 0.15, blue: 0.18)
+        )
+        browserState.canvases[idx].elements.append(el)
+        browserState.scheduleSave()
     }
 
     private func addElement(kind: AlpCanvasElementKind, text: String, color: RGBAColor) {
@@ -145,19 +179,26 @@ struct CanvasCardItemView: View {
                 }
             }
 
-            TextEditor(text: $draftText)
-                .scrollContentBackground(.hidden)
-                .font(
-                    element.kind == .textHeader
-                        ? .system(size: 20, weight: .bold, design: .rounded)
-                        : (element.kind == .codeSnippet ? .system(size: 12, design: .monospaced) : .system(size: 13.5, weight: .medium))
-                )
-                .foregroundStyle(element.color.luminance > 0.55 ? Color.black.opacity(0.86) : Color.white.opacity(0.94))
-                .onChange(of: draftText) { _, newVal in
-                    var updated = element
-                    updated.text = newVal
-                    onUpdate(updated)
-                }
+            if element.kind == .image, let path = element.urlString, let img = NSImage(contentsOfFile: path) {
+                Image(nsImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } else {
+                TextEditor(text: $draftText)
+                    .scrollContentBackground(.hidden)
+                    .font(
+                        element.kind == .textHeader
+                            ? .system(size: 20, weight: .bold, design: .rounded)
+                            : (element.kind == .codeSnippet ? .system(size: 12, design: .monospaced) : .system(size: 13.5, weight: .medium))
+                    )
+                    .foregroundStyle(element.color.luminance > 0.55 ? Color.black.opacity(0.86) : Color.white.opacity(0.94))
+                    .onChange(of: draftText) { _, newVal in
+                        var updated = element
+                        updated.text = newVal
+                        onUpdate(updated)
+                    }
+            }
         }
         .padding(12)
         .frame(width: element.width, height: element.height)

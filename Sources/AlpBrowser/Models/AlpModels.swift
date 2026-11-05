@@ -616,6 +616,7 @@ public enum AlpCanvasElementKind: String, Codable, Equatable, Hashable, Sendable
     case textHeader
     case webCard
     case codeSnippet
+    case image
 }
 
 public struct AlpCanvasElement: Identifiable, Codable, Equatable, Hashable, Sendable {

@@ -27,7 +27,12 @@ PORT = int(os.environ.get("ARC2_PORT", "8788"))
 STORAGE_DIR = Path.home() / ".arc2-cloud"
 VAULTS_DIR = STORAGE_DIR / "vaults"
 CLAUDE_BIN = "/home/ubuntu/.local/bin/claude"
-VAULT_ID_RE = re.compile(r"^[a-fA-F0-9]{32,64}$")
+VAULT_ID_RE = re.compile(r"^[a-zA-Z0-9_\-\.]{1,128}$")
+
+
+def get_vault_file(vault_id: str) -> Path:
+    safe = re.sub(r"[^a-zA-Z0-9_\-]", "_", vault_id.lower())
+    return VAULTS_DIR / f"{safe}.enc"
 
 
 class ArcPrivacyCloudHandler(http.server.BaseHTTPRequestHandler):
@@ -71,7 +76,7 @@ class ArcPrivacyCloudHandler(http.server.BaseHTTPRequestHandler):
             if not VAULT_ID_RE.match(vault_id):
                 self._send_json(400, {"error": "Invalid vault_id"})
                 return
-            vault_file = VAULTS_DIR / f"{vault_id}.enc"
+            vault_file = get_vault_file(vault_id)
             if not vault_file.exists():
                 self._send_json(404, {"error": "Vault not found"})
                 return
@@ -99,8 +104,8 @@ class ArcPrivacyCloudHandler(http.server.BaseHTTPRequestHandler):
                 return
             body = self.rfile.read(length)
             VAULTS_DIR.mkdir(parents=True, exist_ok=True)
-            vault_file = VAULTS_DIR / f"{vault_id}.enc"
-            tmp_file = VAULTS_DIR / f"{vault_id}.enc.tmp"
+            vault_file = get_vault_file(vault_id)
+            tmp_file = vault_file.with_suffix(".tmp")
             tmp_file.write_bytes(body)
             os.chmod(tmp_file, 0o600)
             tmp_file.replace(vault_file)

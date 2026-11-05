@@ -331,20 +331,58 @@ public struct SidebarLibraryView: View {
 
     // MARK: - Downloads List View
 
-    private var downloadsListView: some View {
-        VStack(spacing: 12) {
-            Text("Downloads")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(theme.foregroundColor)
-            Button("Open Downloads Folder") {
-                let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
-                NSWorkspace.shared.open(downloadsURL)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+    private var recentDownloads: [URL] {
+        guard let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else { return [] }
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(at: downloadsURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
+            return []
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 32)
+        let regularFiles = files.filter { url in
+            (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+        }
+        let sorted = regularFiles.sorted {
+            let d1 = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
+            let d2 = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
+            return d1 > d2
+        }
+        if searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+            return Array(sorted.prefix(25))
+        }
+        let q = searchQuery.lowercased()
+        return sorted.filter { $0.lastPathComponent.lowercased().contains(q) }
+    }
+
+    private var downloadsListView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Recent Downloads")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(theme.foregroundColor)
+                Spacer()
+                Button {
+                    let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
+                    NSWorkspace.shared.open(downloadsURL)
+                } label: {
+                    Label("Open Folder", systemImage: "arrow.up.forward.square")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.effectiveAccentColor)
+            }
+            .padding(.horizontal, 4)
+
+            if recentDownloads.isEmpty {
+                Text("No downloads found")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.secondaryForegroundColor)
+                    .padding()
+            } else {
+                ForEach(recentDownloads, id: \.self) { fileURL in
+                    DownloadItemRow(fileURL: fileURL, theme: theme)
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - Boosts (Styles) List View
@@ -460,5 +498,68 @@ struct ArchivedTabRowItem: View {
             return host + path
         }
         return host
+    }
+}
+
+struct DownloadItemRow: View {
+    let fileURL: URL
+    let theme: SpaceTheme
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: fileURL.path))
+                .resizable()
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(fileURL.lastPathComponent)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(theme.foregroundColor)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text(fileSizeString)
+                    .font(.system(size: 10))
+                    .foregroundStyle(theme.secondaryForegroundColor)
+            }
+
+            Spacer()
+
+            if isHovered {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 10))
+                        .foregroundStyle(theme.secondaryForegroundColor)
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.plain)
+                .help("Show in Finder")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isHovered ? theme.hoverBackground : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .onTapGesture {
+            NSWorkspace.shared.open(fileURL)
+        }
+    }
+
+    private var fileSizeString: String {
+        guard let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey]),
+              let size = values.fileSize else {
+            return ""
+        }
+        let bcf = ByteCountFormatter()
+        bcf.allowedUnits = [.useAll]
+        bcf.countStyle = .file
+        return bcf.string(fromByteCount: Int64(size))
     }
 }

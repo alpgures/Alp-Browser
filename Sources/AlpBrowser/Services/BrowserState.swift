@@ -661,12 +661,21 @@ public final class BrowserState: ObservableObject {
     public func switchToNextSpace(forward: Bool) {
         guard !spaces.isEmpty else { return }
         let currentIdx = activeSpaceIndex ?? 0
-        spaceTransitionDirection = forward ? 1 : -1
-        let nextIdx = forward
-            ? (currentIdx + 1) % spaces.count
-            : (currentIdx - 1 + spaces.count) % spaces.count
-        activeSpaceID = spaces[nextIdx].id
-        scheduleSave()
+        if forward {
+            if currentIdx < spaces.count - 1 {
+                switchToSpace(at: currentIdx + 1)
+            }
+            // If already at rightmost space: do not wrap around; rebound handles visual cue
+        } else {
+            if currentIdx > 0 {
+                switchToSpace(at: currentIdx - 1)
+            } else {
+                // If at leftmost space: swipe right reveals Library from the side
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                    isLibrarySheetPresented = true
+                }
+            }
+        }
     }
 
     // MARK: - Canvas & Notes Management

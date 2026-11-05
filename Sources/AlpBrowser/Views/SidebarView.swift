@@ -383,6 +383,7 @@ public struct SidebarView: View {
 
 struct SidebarSpaceContentView: View {
     @EnvironmentObject var browserState: BrowserState
+    @ObservedObject private var gestures = TrackpadGestureManager.shared
     @Binding var renamingTabID: UUID?
     @Binding var renameDraft: String
 
@@ -438,6 +439,7 @@ struct SidebarSpaceContentView: View {
                     )
                 )
             }
+            .offset(x: gestures.sidebarSwipeOffset)
             .animation(.spring(response: 0.30, dampingFraction: 0.85), value: browserState.activeSpaceID)
             .padding(.horizontal, 2)
         }

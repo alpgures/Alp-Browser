@@ -232,26 +232,67 @@ public final class TrackpadGestureManager: ObservableObject {
 
     private func handleSidebarHorizontalSwipe() {
         let state = BrowserState.shared
-        sidebarSwipeOffset = accumulatedDeltaX
+        let spaceCount = state.spaces.count
+        guard spaceCount > 0 else { return }
+        let currentIdx = state.activeSpaceIndex ?? 0
         let threshold: CGFloat = 65.0
 
-        if accumulatedDeltaX > threshold {
-            // Two-finger swipe right on sidebar reveals Library (Archive, Canvas, Notes, Downloads)
-            hasCommittedInCurrentGesture = true
-            sidebarSwipeOffset = 0
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
-                state.isLibrarySheetPresented = true
+        if state.isLibrarySheetPresented {
+            // Library drawer is already revealed: swiping left slides it closed
+            if accumulatedDeltaX < -threshold {
+                hasCommittedInCurrentGesture = true
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                    state.isLibrarySheetPresented = false
+                }
+                performHaptic()
             }
-            performHaptic()
-        } else if accumulatedDeltaX < -threshold && state.spaces.count > 1 {
-            // Two-finger swipe left switches to next space
-            hasCommittedInCurrentGesture = true
-            spaceTransitionDirection = 1
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
-                state.switchToNextSpace(forward: true)
-                sidebarSwipeOffset = 0
+            return
+        }
+
+        if accumulatedDeltaX > 0 {
+            // Swiping Right
+            if currentIdx == 0 {
+                // On leftmost space: swiping right reveals the Library from the side!
+                sidebarSwipeOffset = min(accumulatedDeltaX * 0.35, 45.0)
+                if accumulatedDeltaX > threshold {
+                    hasCommittedInCurrentGesture = true
+                    sidebarSwipeOffset = 0
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                        state.isLibrarySheetPresented = true
+                    }
+                    performHaptic()
+                }
+            } else {
+                // On intermediate space: swiping right switches to previous space (leftwards)
+                sidebarSwipeOffset = min(accumulatedDeltaX * 0.35, 45.0)
+                if accumulatedDeltaX > threshold {
+                    hasCommittedInCurrentGesture = true
+                    sidebarSwipeOffset = 0
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                        state.switchToSpace(at: currentIdx - 1)
+                    }
+                    performHaptic()
+                }
             }
-            performHaptic()
+        } else if accumulatedDeltaX < 0 {
+            // Swiping Left
+            let isRightmost = (currentIdx >= spaceCount - 1)
+            if isRightmost {
+                // On rightmost space: DO NOTHING except elastic rubber-band rebound animation!
+                sidebarSwipeOffset = max(accumulatedDeltaX * 0.22, -35.0)
+                // When gesture ends, finishGesture() springs sidebarSwipeOffset back to 0!
+            } else {
+                // On intermediate space: swiping left switches to next space (rightwards)
+                sidebarSwipeOffset = max(accumulatedDeltaX * 0.35, -45.0)
+                if accumulatedDeltaX < -threshold {
+                    hasCommittedInCurrentGesture = true
+                    sidebarSwipeOffset = 0
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                        state.switchToSpace(at: currentIdx + 1)
+                    }
+                    performHaptic()
+                }
+            }
         }
     }
 
@@ -272,7 +313,7 @@ public final class TrackpadGestureManager: ObservableObject {
     }
 
     private func finishGesture() {
-        withAnimation(.easeOut(duration: 0.18)) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
             sidebarSwipeOffset = 0
             viewportSwipeProgress = 0
             isDraggingSidebarPager = false

@@ -248,7 +248,222 @@ public struct NoteEditorView: View {
     }
 }
 
-// MARK: - 3. Library Sheet View
+// MARK: - 3. Library Drawer View (Side-Reveal Panel)
+
+public struct LibraryDrawerView: View {
+    @EnvironmentObject var browserState: BrowserState
+
+    public init() {}
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            // Header with tabs and close button
+            HStack(spacing: 12) {
+                Text("Library")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+
+                Spacer()
+
+                ForEach(BrowserState.LibrarySection.allCases) { section in
+                    Button {
+                        browserState.selectedLibrarySection = section
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: section.icon)
+                            Text(section.rawValue)
+                        }
+                        .font(.system(size: 11.5, weight: browserState.selectedLibrarySection == section ? .semibold : .medium))
+                        .foregroundStyle(browserState.selectedLibrarySection == section ? .white : .white.opacity(0.65))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            browserState.selectedLibrarySection == section ? Color.white.opacity(0.18) : Color.clear,
+                            in: Capsule()
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                Button {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                        browserState.isLibrarySheetPresented = false
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(Color.white.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+                .help("Close Library (Esc)")
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .background(Color.white.opacity(0.04))
+
+            Divider().background(Color.white.opacity(0.12))
+
+            // Tab Content
+            Group {
+                switch browserState.selectedLibrarySection {
+                case .archive:
+                    archiveListView
+                case .canvas:
+                    canvasListView
+                case .notes:
+                    notesListView
+                case .styles:
+                    stylesListView
+                case .sync:
+                    syncStatusView
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var archiveListView: some View {
+        List {
+            if browserState.archivedTabs.isEmpty {
+                Text("No archived tabs yet")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(browserState.archivedTabs) { tab in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tab.title)
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(tab.urlString)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(tab.reason)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Button("Restore") {
+                            browserState.openNewTab(urlString: tab.urlString, title: tab.title)
+                            withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                                browserState.isLibrarySheetPresented = false
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
+    private var canvasListView: some View {
+        List {
+            ForEach(browserState.canvases) { canvas in
+                HStack {
+                    Image(systemName: "scribble.variable")
+                    Text(canvas.title)
+                        .font(.system(size: 13, weight: .medium))
+                    Spacer()
+                    Button("Open") {
+                        browserState.openNewTab(urlString: "alp://canvas/\(canvas.id)", title: canvas.title, kind: .canvas(canvas.id))
+                        withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                            browserState.isLibrarySheetPresented = false
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private var notesListView: some View {
+        List {
+            ForEach(browserState.notes) { note in
+                HStack {
+                    Image(systemName: "note.text")
+                    Text(note.title)
+                        .font(.system(size: 13, weight: .medium))
+                    Spacer()
+                    Button("Open") {
+                        browserState.openNewTab(urlString: "alp://note/\(note.id)", title: note.title, kind: .note(note.id))
+                        withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                            browserState.isLibrarySheetPresented = false
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private var stylesListView: some View {
+        List {
+            ForEach(browserState.styles) { style in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(style.domain)
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("\(style.zappedSelectors.count) hidden elements")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { style.isEnabled },
+                        set: { newVal in
+                            if let idx = browserState.styles.firstIndex(where: { $0.id == style.id }) {
+                                browserState.styles[idx].isEnabled = newVal
+                                browserState.scheduleSave()
+                            }
+                        }
+                    ))
+                }
+            }
+        }
+    }
+
+    private var syncStatusView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: browserState.isSyncConnected ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .font(.system(size: 40))
+                .foregroundStyle(browserState.isSyncConnected ? Color.green : Color.orange)
+
+            Text("Encrypted Vault Sync")
+                .font(.system(size: 16, weight: .bold))
+
+            Text("Your spaces, tabs, and styles are encrypted on your Mac before syncing.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+
+            HStack {
+                Text("Status: \(browserState.syncStatusText)")
+                    .font(.system(size: 12, weight: .medium))
+                Spacer()
+                Button("Sync Now") {
+                    Task {
+                        await browserState.syncNow()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .frame(maxWidth: 360)
+            .padding()
+            .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
+    }
+}
+
+// MARK: - 4. Legacy Library Sheet View (For modal compatibility)
 
 public struct LibrarySheetView: View {
     @EnvironmentObject var browserState: BrowserState

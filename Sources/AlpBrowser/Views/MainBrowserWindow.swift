@@ -24,19 +24,31 @@ public struct MainBrowserWindow: View {
             // 2. Main Content Split Layout
             HStack(spacing: 0) {
                 if !browserState.isSidebarCollapsed {
+                    let currentWidth = browserState.isLibrarySheetPresented ? max(browserState.sidebarWidth, 330) : browserState.sidebarWidth
                     SidebarView()
-                        .frame(width: browserState.sidebarWidth)
+                        .frame(width: currentWidth)
+                        .animation(.spring(response: 0.30, dampingFraction: 0.85), value: browserState.isLibrarySheetPresented)
                         .transition(.move(edge: .leading).combined(with: .opacity))
 
                     SidebarResizeHandle(sidebarWidth: $browserState.sidebarWidth)
                 }
 
-                // Inset Web Viewport
-                viewportArea
-                    .padding(.top, 8)
-                    .padding(.bottom, 8)
-                    .padding(.trailing, 8)
-                    .padding(.leading, browserState.isSidebarCollapsed ? 8 : 2)
+                // Inset Web Viewport with Directional Space Navigation Animation
+                ZStack {
+                    viewportArea
+                        .id(browserState.activeSpaceID)
+                        .transition(
+                            .asymmetric(
+                                insertion: .move(edge: browserState.spaceTransitionDirection > 0 ? .trailing : .leading),
+                                removal: .move(edge: browserState.spaceTransitionDirection > 0 ? .leading : .trailing)
+                            )
+                        )
+                }
+                .animation(.spring(response: 0.32, dampingFraction: 0.85), value: browserState.activeSpaceID)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
+                .padding(.trailing, 8)
+                .padding(.leading, browserState.isSidebarCollapsed ? 8 : 2)
             }
 
             // 3. Collapsed Sidebar Edge Hover Trigger
@@ -169,10 +181,6 @@ public struct MainBrowserWindow: View {
             }
         }
         .ignoresSafeArea(.all)
-        .sheet(isPresented: $browserState.isLibrarySheetPresented) {
-            LibrarySheetView()
-                .environmentObject(browserState)
-        }
         .sheet(isPresented: $browserState.isSettingsPresented) {
             SettingsView()
                 .environmentObject(browserState)

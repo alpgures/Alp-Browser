@@ -268,6 +268,7 @@ public final class TrackpadGestureManager: ObservableObject {
                 if accumulatedDeltaX > threshold {
                     hasCommittedInCurrentGesture = true
                     sidebarSwipeOffset = 0
+                    state.spaceTransitionDirection = -1
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                         state.switchToSpace(at: currentIdx - 1)
                     }
@@ -287,6 +288,7 @@ public final class TrackpadGestureManager: ObservableObject {
                 if accumulatedDeltaX < -threshold {
                     hasCommittedInCurrentGesture = true
                     sidebarSwipeOffset = 0
+                    state.spaceTransitionDirection = 1
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                         state.switchToSpace(at: currentIdx + 1)
                     }

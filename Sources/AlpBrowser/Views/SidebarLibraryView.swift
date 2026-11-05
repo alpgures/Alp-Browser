@@ -1,0 +1,464 @@
+//
+//  SidebarLibraryView.swift
+//  Alp Browser
+//
+//  In-Sidebar Dual-Column Library view matching Arc.
+//  Copyright © 2026 Alp Gures. All rights reserved.
+//
+
+import SwiftUI
+
+public enum LibraryRailSection: String, CaseIterable, Identifiable {
+    case media = "Media"
+    case downloads = "Downloads"
+    case easels = "Easels"
+    case spaces = "Spaces"
+    case boosts = "Boosts"
+    case archive = "Archived Tabs"
+
+    public var id: String { rawValue }
+
+    public var iconName: String {
+        switch self {
+        case .media: return "photo.stack"
+        case .downloads: return "arrow.down.circle"
+        case .easels: return "pencil.and.outline"
+        case .spaces: return "square.stack.3d.up"
+        case .boosts: return "sparkles"
+        case .archive: return "archivebox"
+        }
+    }
+}
+
+public struct SidebarLibraryView: View {
+    @EnvironmentObject var browserState: BrowserState
+    @State private var selectedSection: LibraryRailSection = .archive
+    @State private var searchQuery: String = ""
+
+    private var theme: SpaceTheme {
+        browserState.activeTheme
+    }
+
+    public init() {}
+
+    public var body: some View {
+        HStack(spacing: 0) {
+            // Left Rail Column
+            railColumn
+                .frame(width: 70)
+
+            // Vertical subtle divider
+            Rectangle()
+                .fill(theme.secondaryForegroundColor.opacity(0.18))
+                .frame(width: 1)
+                .padding(.vertical, 8)
+
+            // Right Content Sub-panel
+            contentColumn
+                .frame(maxWidth: .infinity)
+        }
+        .foregroundStyle(theme.foregroundColor)
+    }
+
+    // MARK: - Left Rail Column
+
+    private var railColumn: some View {
+        VStack(spacing: 6) {
+            // Top clearance for macOS traffic lights (dots)
+            Spacer()
+                .frame(height: 38)
+
+            ForEach(LibraryRailSection.allCases) { section in
+                railButton(for: section)
+            }
+
+            Spacer()
+
+            // Bottom action buttons matching Arc
+            HStack(spacing: 6) {
+                Button {
+                    let newId = UUID()
+                    browserState.canvases.append(AlpCanvas(id: newId, title: "New Easel"))
+                    browserState.scheduleSave()
+                    selectedSection = .easels
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(theme.secondaryForegroundColor)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help("New Easel / Canvas")
+
+                Button {
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                        browserState.isLibrarySheetPresented = false
+                    }
+                } label: {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(theme.secondaryForegroundColor)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help("Back to Spaces")
+            }
+            .padding(.bottom, 12)
+        }
+        .padding(.horizontal, 3)
+    }
+
+    @ViewBuilder
+    private func railButton(for section: LibraryRailSection) -> some View {
+        let isSelected = (selectedSection == section)
+
+        Button {
+            if section == .spaces {
+                withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                    browserState.isLibrarySheetPresented = false
+                }
+            } else {
+                withAnimation(.spring(response: 0.20, dampingFraction: 0.85)) {
+                    selectedSection = section
+                }
+            }
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: section.iconName)
+                    .font(.system(size: 16, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? theme.foregroundColor : theme.secondaryForegroundColor)
+
+                Text(section.rawValue)
+                    .font(.system(size: 9.5, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? theme.foregroundColor : theme.secondaryForegroundColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(width: 64, height: 46)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? theme.selectionBackground : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(section.rawValue)
+    }
+
+    // MARK: - Right Content Sub-Panel
+
+    @ViewBuilder
+    private var contentColumn: some View {
+        VStack(spacing: 8) {
+            // Top Search & Filter Bar
+            HStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.secondaryForegroundColor)
+                    TextField(searchPlaceholder, text: $searchQuery)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(theme.foregroundColor)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(theme.pillBackground)
+                )
+
+                if selectedSection == .archive {
+                    Button {
+                        // Filter action
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                                .font(.system(size: 10.5))
+                            Text("Filter")
+                                .font(.system(size: 10.5, weight: .medium))
+                        }
+                        .foregroundStyle(theme.secondaryForegroundColor)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(theme.pillBackground)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 14)
+            .padding(.horizontal, 8)
+
+            // Content List depending on selectedSection
+            ScrollView(.vertical, showsIndicators: false) {
+                switch selectedSection {
+                case .archive:
+                    archiveListView
+                case .easels:
+                    easelsListView
+                case .downloads:
+                    downloadsListView
+                case .boosts:
+                    boostsListView
+                case .media:
+                    mediaListView
+                case .spaces:
+                    EmptyView()
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    private var searchPlaceholder: String {
+        switch selectedSection {
+        case .archive: return "Search Archive..."
+        case .easels: return "Search Easels..."
+        case .downloads: return "Search Downloads..."
+        case .boosts: return "Search Boosts..."
+        case .media: return "Search Media..."
+        case .spaces: return "Search..."
+        }
+    }
+
+    // MARK: - Archive List View (Grouped by Today, Yesterday, Previous 7 Days)
+
+    private var filteredArchivedTabs: [ArchivedTab] {
+        if searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+            return browserState.archivedTabs
+        }
+        let q = searchQuery.lowercased()
+        return browserState.archivedTabs.filter {
+            $0.title.lowercased().contains(q) || $0.urlString.lowercased().contains(q)
+        }
+    }
+
+    private var archiveListView: some View {
+        let tabs = filteredArchivedTabs
+        let calendar = Calendar.current
+        let todayTabs = tabs.filter { calendar.isDateInToday($0.archivedAt) }
+        let yesterdayTabs = tabs.filter { calendar.isDateInYesterday($0.archivedAt) }
+        let olderTabs = tabs.filter { !calendar.isDateInToday($0.archivedAt) && !calendar.isDateInYesterday($0.archivedAt) }
+
+        return VStack(alignment: .leading, spacing: 10) {
+            if tabs.isEmpty {
+                VStack(spacing: 6) {
+                    Text("No archived tabs")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(theme.secondaryForegroundColor)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 40)
+            } else {
+                if !todayTabs.isEmpty {
+                    archiveSection(title: "Today", items: todayTabs)
+                }
+                if !yesterdayTabs.isEmpty {
+                    archiveSection(title: "Yesterday", items: yesterdayTabs)
+                }
+                if !olderTabs.isEmpty {
+                    archiveSection(title: "Previous Days", items: olderTabs)
+                }
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.top, 4)
+    }
+
+    @ViewBuilder
+    private func archiveSection(title: String, items: [ArchivedTab]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(theme.secondaryForegroundColor.opacity(0.8))
+                .padding(.leading, 6)
+                .padding(.top, 6)
+
+            ForEach(items) { tab in
+                ArchivedTabRowItem(tab: tab, theme: theme) {
+                    browserState.openNewTab(urlString: tab.urlString, title: tab.title)
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                        browserState.isLibrarySheetPresented = false
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Easels List View
+
+    private var easelsListView: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if browserState.canvases.isEmpty {
+                Text("No easels yet")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.secondaryForegroundColor)
+                    .padding()
+            } else {
+                ForEach(browserState.canvases) { canvas in
+                    Button {
+                        browserState.openNewTab(
+                            urlString: "alp://canvas/\(canvas.id)",
+                            title: canvas.title,
+                            kind: .canvas(canvas.id)
+                        )
+                        withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                            browserState.isLibrarySheetPresented = false
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "pencil.and.outline")
+                                .font(.system(size: 12))
+                                .foregroundStyle(theme.effectiveAccentColor)
+                            Text(canvas.title)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(theme.foregroundColor)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(theme.hoverBackground.opacity(0.5)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(8)
+    }
+
+    // MARK: - Downloads List View
+
+    private var downloadsListView: some View {
+        VStack(spacing: 12) {
+            Text("Downloads")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.foregroundColor)
+            Button("Open Downloads Folder") {
+                let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
+                NSWorkspace.shared.open(downloadsURL)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 32)
+    }
+
+    // MARK: - Boosts (Styles) List View
+
+    private var boostsListView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if browserState.styles.isEmpty {
+                Text("No custom site boosts created yet")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.secondaryForegroundColor)
+                    .padding()
+            } else {
+                ForEach(browserState.styles) { style in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(style.domain)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(theme.foregroundColor)
+                            Text("\(style.zappedSelectors.count) zapped elements")
+                                .font(.system(size: 10))
+                                .foregroundStyle(theme.secondaryForegroundColor)
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { style.isEnabled },
+                            set: { val in
+                                if let idx = browserState.styles.firstIndex(where: { $0.id == style.id }) {
+                                    browserState.styles[idx].isEnabled = val
+                                    browserState.scheduleSave()
+                                }
+                            }
+                        ))
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(theme.pillBackground))
+                }
+            }
+        }
+        .padding(8)
+    }
+
+    // MARK: - Media List View
+
+    private var mediaListView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "photo.on.rectangle")
+                .font(.system(size: 28))
+                .foregroundStyle(theme.secondaryForegroundColor)
+            Text("No recent media saved")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.secondaryForegroundColor)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 32)
+    }
+}
+
+// MARK: - Archived Tab Row Item
+
+struct ArchivedTabRowItem: View {
+    let tab: ArchivedTab
+    let theme: SpaceTheme
+    let onOpen: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack(spacing: 8) {
+                if let fav = FaviconCache.shared.favicon(for: tab.urlString) {
+                    Image(nsImage: fav)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: "globe")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.secondaryForegroundColor)
+                        .frame(width: 14, height: 14)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tab.title.isEmpty ? tab.urlString : tab.title)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(theme.foregroundColor)
+                        .lineLimit(1)
+
+                    Text(cleanHostOrPath(tab.urlString))
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(theme.secondaryForegroundColor)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4.5)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isHovered ? theme.hoverBackground : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    private func cleanHostOrPath(_ urlStr: String) -> String {
+        guard let url = URL(string: urlStr) else { return urlStr }
+        let host = url.host ?? ""
+        let path = url.path
+        if path.count > 1 {
+            return host + path
+        }
+        return host
+    }
+}

@@ -23,41 +23,60 @@ public struct SidebarView: View {
     public init() {}
 
     public var body: some View {
-        VStack(spacing: 8) {
-            // 1. Top Navigation Row (Seamless with macOS traffic lights)
-            topNavigationRow
-                .padding(.top, 12)
-                .padding(.horizontal, 6)
+        Group {
+            if browserState.isLibrarySheetPresented {
+                SidebarLibraryView()
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .leading).combined(with: .opacity),
+                            removal: .move(edge: .leading).combined(with: .opacity)
+                        )
+                    )
+            } else {
+                VStack(spacing: 8) {
+                    // 1. Top Navigation Row (Seamless with macOS traffic lights)
+                    topNavigationRow
+                        .padding(.top, 12)
+                        .padding(.horizontal, 6)
 
-            // 2. Command / URL Bar Pill with hover "..." menu
-            urlCommandPill
-                .padding(.horizontal, 6)
+                    // 2. Command / URL Bar Pill with hover "..." menu
+                    urlCommandPill
+                        .padding(.horizontal, 6)
 
-            // 3. Favorites Grid (2x2 layout for 4 bookmarks)
-            if !browserState.favorites.isEmpty {
-                favoritesGrid
-                    .padding(.horizontal, 6)
-                    .padding(.top, 2)
+                    // 3. Favorites Grid (2x2 layout for 4 bookmarks)
+                    if !browserState.favorites.isEmpty {
+                        favoritesGrid
+                            .padding(.horizontal, 6)
+                            .padding(.top, 2)
+                    }
+
+                    // 4. Interactive Horizontal Space Pager with smooth slide transition
+                    SidebarSpaceContentView(
+                        renamingTabID: $renamingTabID,
+                        renameDraft: $renameDraft
+                    )
+
+                    // 5. Media Mini-Player Card (when background tab is playing audio)
+                    if let audioTab = browserState.backgroundAudioPlayingTab {
+                        sidebarMediaMiniPlayer(for: audioTab)
+                            .padding(.horizontal, 6)
+                    }
+
+                    // 6. Bottom Space Switcher & Library Bar (Stable during sidebar resizing)
+                    bottomSpaceSwitcherBar
+                        .padding(.horizontal, 6)
+                        .padding(.bottom, 10)
+                }
+                .foregroundStyle(theme.foregroundColor)
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .trailing).combined(with: .opacity)
+                    )
+                )
             }
-
-            // 4. Interactive Horizontal Space Pager with smooth slide transition
-            SidebarSpaceContentView(
-                renamingTabID: $renamingTabID,
-                renameDraft: $renameDraft
-            )
-
-            // 5. Media Mini-Player Card (when background tab is playing audio)
-            if let audioTab = browserState.backgroundAudioPlayingTab {
-                sidebarMediaMiniPlayer(for: audioTab)
-                    .padding(.horizontal, 6)
-            }
-
-            // 6. Bottom Space Switcher & Library Bar (Stable during sidebar resizing)
-            bottomSpaceSwitcherBar
-                .padding(.horizontal, 6)
-                .padding(.bottom, 10)
         }
-        .foregroundStyle(theme.foregroundColor)
+        .animation(.spring(response: 0.30, dampingFraction: 0.85), value: browserState.isLibrarySheetPresented)
     }
 
     // MARK: - 1. Top Navigation Row

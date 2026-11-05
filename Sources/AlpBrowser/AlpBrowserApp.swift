@@ -37,6 +37,11 @@ public struct AlpBrowserApp: App {
             }
 
             CommandGroup(replacing: .newItem) {
+                Button("New Tab Page") {
+                    browserState.openStartTab()
+                }
+                .keyboardShortcut("t", modifiers: [.command, .option])
+
                 Button("Command Bar / New Tab") {
                     browserState.openCommandBar(prefilledWithCurrentURL: false)
                 }
@@ -352,12 +357,53 @@ public final class AlpAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelega
     }
 }
 
+/// Keeps the system traffic lights on the same horizontal centre line as the top-bar icons and URL pill.
+enum AlpWindowChrome {
+    static func alignTrafficLights(in window: NSWindow) {
+        guard window.styleMask.contains(.titled), !window.styleMask.contains(.fullScreen) else { return }
+        let targetY = window.frame.height - AlpTopBarMetrics.centerY   // window coordinates, origin bottom-left
+        for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let button = window.standardWindowButton(type), let container = button.superview else { continue }
+            let currentY = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil).y
+            let delta = targetY - currentY
+            guard abs(delta) > 0.5 else { continue }
+            let dy = container.isFlipped ? -delta : delta
+            button.setFrameOrigin(NSPoint(x: button.frame.origin.x, y: button.frame.origin.y + dy))
+        }
+    }
+}
+
 private final class AlpWindowAccessorView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self)
         if let window = self.window {
             configure(window: window)
+            // AppKit re-lays the buttons out on resize, key changes and full-screen exits; re-apply after it does.
+            let names: [Notification.Name] = [
+                NSWindow.didResizeNotification,
+                NSWindow.didEndLiveResizeNotification,
+                NSWindow.didBecomeKeyNotification,
+                NSWindow.didBecomeMainNotification,
+                NSWindow.didExitFullScreenNotification
+            ]
+            for name in names {
+                NotificationCenter.default.addObserver(self, selector: #selector(realignTrafficLights), name: name, object: window)
+            }
         }
+    }
+
+    @objc private func realignTrafficLights() {
+        guard let window = self.window else { return }
+        AlpWindowChrome.alignTrafficLights(in: window)
+        // Some of those notifications fire before AppKit finishes its own layout pass.
+        DispatchQueue.main.async { [weak window] in
+            if let window { AlpWindowChrome.alignTrafficLights(in: window) }
+        }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     private func configure(window: NSWindow) {
@@ -372,6 +418,10 @@ private final class AlpWindowAccessorView: NSView {
         if window.frame.width < 1100 {
             window.setContentSize(NSSize(width: 1320, height: 840))
             window.center()
+        }
+        AlpWindowChrome.alignTrafficLights(in: window)
+        DispatchQueue.main.async { [weak window] in
+            if let window { AlpWindowChrome.alignTrafficLights(in: window) }
         }
     }
 }

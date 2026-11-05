@@ -39,13 +39,15 @@ public struct SidebarView: View {
             } else {
                 VStack(spacing: 8) {
                     // 1. Top Navigation Row (Seamless with macOS traffic lights)
+                    // The row is exactly the band height, flush with the window top, so its centre
+                    // is the traffic-light centre line.
                     topNavigationRow
-                        .padding(.top, 10)
                         .padding(.horizontal, 8)
 
                     // 2. Command / URL Bar Pill with hover "..." menu
                     urlCommandPill
                         .padding(.horizontal, 8)
+                        .padding(.top, 4)
 
                     // 3. Favorites Grid (2x2 layout for 4 bookmarks)
                     if !browserState.favorites.isEmpty {
@@ -119,63 +121,36 @@ public struct SidebarView: View {
     // MARK: - 1. Top Navigation Row
 
     private var topNavigationRow: some View {
-        HStack(spacing: 4) {
-            if !browserState.isSidebarCollapsed {
-                // Exact width clearance for macOS window traffic lights (dots)
-                Spacer()
-                    .frame(width: 68)
-            }
+        HStack(spacing: AlpTopBarMetrics.iconSpacing) {
+            // Clearance for the macOS traffic lights, measured from the window edge: the row has 8pt
+            // of horizontal padding, and the hover-peek panel (sidebar collapsed) is inset another 8pt.
+            Spacer()
+                .frame(width: AlpTopBarMetrics.trafficLightInset - (browserState.isSidebarCollapsed ? 16 : 8))
 
-            Button {
+            AlpTopBarIconButton(symbol: "sidebar.left", help: "Toggle Sidebar (⌘S)", theme: theme) {
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
                     browserState.isSidebarCollapsed.toggle()
                     browserState.isSidebarHoverPeeking = false
                 }
-            } label: {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 12.5, weight: .medium))
-                    .frame(width: 24, height: 24)
             }
-            .buttonStyle(AlpIconButtonStyle(theme: theme))
-            .help("Toggle Sidebar (⌘S)")
 
             Spacer()
 
-            Button {
-                browserState.goBackInActiveTab()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                    .opacity(browserState.canGoBackInActiveTab ? 1.0 : 0.35)
-            }
-            .buttonStyle(AlpIconButtonStyle(theme: theme))
-            .disabled(!browserState.canGoBackInActiveTab)
-            .help("Back (⌘[)")
+            AlpTopBarIconButton(
+                symbol: "chevron.left", help: "Back (⌘[)", theme: theme,
+                isEnabled: browserState.canGoBackInActiveTab
+            ) { browserState.goBackInActiveTab() }
 
-            Button {
-                browserState.goForwardInActiveTab()
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                    .opacity(browserState.canGoForwardInActiveTab ? 1.0 : 0.35)
-            }
-            .buttonStyle(AlpIconButtonStyle(theme: theme))
-            .disabled(!browserState.canGoForwardInActiveTab)
-            .help("Forward (⌘])")
+            AlpTopBarIconButton(
+                symbol: "chevron.right", help: "Forward (⌘])", theme: theme,
+                isEnabled: browserState.canGoForwardInActiveTab
+            ) { browserState.goForwardInActiveTab() }
 
-            Button {
+            AlpTopBarIconButton(symbol: "arrow.clockwise", help: "Reload Page (⌘R)", theme: theme) {
                 browserState.reloadActiveTab()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .frame(width: 24, height: 24)
             }
-            .buttonStyle(AlpIconButtonStyle(theme: theme))
-            .help("Reload Page (⌘R)")
         }
-        .frame(height: 26)
+        .frame(height: AlpTopBarMetrics.bandHeight)
         .frame(maxWidth: .infinity)
     }
 
@@ -199,7 +174,7 @@ public struct SidebarView: View {
                             .frame(width: 13, height: 13)
                     }
 
-                    Text(browserState.activeTab?.simplifiedDomain ?? "Search or Enter URL...")
+                    Text(browserState.activeTab.flatMap { $0.isStartPage ? nil : $0.simplifiedDomain } ?? "Search or Enter URL...")
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(theme.foregroundColor.opacity(0.92))
                         .lineLimit(1)

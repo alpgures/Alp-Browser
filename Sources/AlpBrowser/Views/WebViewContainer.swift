@@ -214,15 +214,20 @@ public struct ViewportPaneView: View {
 
             switch tab.kind {
             case .web:
-                WebViewRepresentable(
-                    tab: tab,
-                    isFocusedPane: isFocusedPane,
-                    onFocus: {
-                        if browserState.activeTabID != tab.id {
-                            browserState.activeTabID = tab.id
+                if tab.isStartPage {
+                    // Blank tabs never create a web view: the native page is instant and fully offline.
+                    StartPageView()
+                } else {
+                    WebViewRepresentable(
+                        tab: tab,
+                        isFocusedPane: isFocusedPane,
+                        onFocus: {
+                            if browserState.activeTabID != tab.id {
+                                browserState.activeTabID = tab.id
+                            }
                         }
-                    }
-                )
+                    )
+                }
             case .canvas(let canvasID):
                 CanvasBoardView(canvasID: canvasID)
             case .note(let noteID):

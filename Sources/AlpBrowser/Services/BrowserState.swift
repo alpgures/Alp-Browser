@@ -645,6 +645,13 @@ public final class BrowserState: ObservableObject {
         return newTab
     }
 
+    /// Opens a blank tab that shows the native start page (reuses the active tab if it is already blank).
+    @discardableResult
+    public func openStartTab() -> TabItem {
+        if let current = activeTab, current.isStartPage { return current }
+        return openNewTab(urlString: "about:blank", title: "New Tab")
+    }
+
     public func navigateTab(id tabID: UUID, to urlString: String) {
         let resolved = resolveInputToURLString(urlString)
         mutateTab(id: tabID) { tab in

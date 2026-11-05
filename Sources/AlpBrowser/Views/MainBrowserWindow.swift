@@ -37,7 +37,7 @@ public struct MainBrowserWindow: View {
                 // Inset Web Viewport (Remains stationary; only the sidebar space slides)
                 viewportArea
                     // With the sidebar hidden the page starts below the navigation strip, never under the traffic lights.
-                    .padding(.top, browserState.isSidebarCollapsed ? CollapsedNavStripMetrics.bandHeight : 8)
+                    .padding(.top, browserState.isSidebarCollapsed ? CollapsedNavStripMetrics.contentTopInset : 8)
                     .padding(.bottom, 8)
                     .padding(.trailing, 8)
                     .padding(.leading, browserState.isSidebarCollapsed ? 8 : 2)
@@ -81,7 +81,9 @@ public struct MainBrowserWindow: View {
                             )
                             .shadow(color: .black.opacity(0.45), radius: 26, x: 8, y: 8)
                             .padding(.leading, 8)
-                            .padding(.vertical, 8)
+                            // Flush with the top so the nav row sits on the traffic-light centre line.
+                            .padding(.top, 0)
+                            .padding(.bottom, 8)
                             .onHover { stillInside in
                                 if !stillInside {
                                     withAnimation(.spring(response: 0.24, dampingFraction: 0.85)) {
@@ -286,32 +288,92 @@ public struct MainBrowserWindow: View {
 
 // MARK: - Collapsed Sidebar Navigation Strip
 
-enum CollapsedNavStripMetrics {
-    /// Height of the titlebar band the page is pushed below.
-    static let bandHeight: CGFloat = 42
-    static let pillHeight: CGFloat = 30
-    static let pillMaxWidth: CGFloat = 520
-    /// Space reserved at the left for the traffic lights.
-    static let trafficLightInset: CGFloat = 84
+/// One shared vertical centre for everything in the top band: the system traffic lights
+/// (repositioned by `AlpWindowChrome`), the toggle/back/forward/reload icons and the URL pill.
+enum AlpTopBarMetrics {
+    /// Height of the slim titlebar band.
+    static let bandHeight: CGFloat = 28
+    /// Distance from the window's top edge to the shared centre line.
+    static let centerY: CGFloat = bandHeight / 2
+    static let iconSize: CGFloat = 24
+    static let iconGlyphSize: CGFloat = 12
+    static let iconSpacing: CGFloat = 2
+    /// Horizontal space reserved for the traffic lights.
+    static let trafficLightInset: CGFloat = 72
 }
 
-/// Titlebar band shown while the sidebar is hidden: a centered, frosted URL pill for the active tab.
-/// Clicking it opens the command bar (⌘L does the same from the menu).
+/// A toolbar icon button on the shared top-bar geometry (same frame and glyph size everywhere).
+struct AlpTopBarIconButton: View {
+    let symbol: String
+    let help: String
+    let theme: SpaceTheme
+    var isEnabled: Bool = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: AlpTopBarMetrics.iconGlyphSize, weight: .medium))
+                .frame(width: AlpTopBarMetrics.iconSize, height: AlpTopBarMetrics.iconSize)
+                .opacity(isEnabled ? 1.0 : 0.35)
+        }
+        .buttonStyle(AlpIconButtonStyle(theme: theme))
+        .disabled(!isEnabled)
+        .help(help)
+    }
+}
+
+enum CollapsedNavStripMetrics {
+    /// Height of the titlebar band (shared with the sidebar's nav row).
+    static let bandHeight: CGFloat = AlpTopBarMetrics.bandHeight
+    /// Where the page starts: the band plus a small gap so the pill never touches the page.
+    static let contentTopInset: CGFloat = bandHeight + 4
+    static let pillHeight: CGFloat = 24
+    static let pillMaxWidth: CGFloat = 520
+    /// Space reserved at each side: traffic lights + toggle/back/forward on the left, mirrored on the right
+    /// so the pill stays centred on the window.
+    static let sideInset: CGFloat = AlpTopBarMetrics.trafficLightInset
+        + 3 * AlpTopBarMetrics.iconSize + 2 * AlpTopBarMetrics.iconSpacing + 16
+}
+
+/// Titlebar band shown while the sidebar is hidden: toggle / back / forward beside the traffic lights and a
+/// centered, frosted URL pill for the active tab. Clicking the pill opens the command bar (⌘L does the same).
 struct CollapsedNavStripView: View {
     @EnvironmentObject var browserState: BrowserState
 
     var body: some View {
         GeometryReader { geo in
-            let inset = CollapsedNavStripMetrics.trafficLightInset
-            // Centered on the window, but never wide enough to reach the traffic lights or the right edge.
+            let inset = CollapsedNavStripMetrics.sideInset
+            // Centered on the window, but never wide enough to reach the icons or the right edge.
             let width = max(160, min(CollapsedNavStripMetrics.pillMaxWidth, geo.size.width - inset * 2))
-            HStack(spacing: 0) {
-                Spacer(minLength: inset)
-                NavPill(tab: browserState.activeTab, theme: browserState.activeTheme)
-                    .frame(width: width, height: CollapsedNavStripMetrics.pillHeight)
-                Spacer(minLength: inset)
+            ZStack(alignment: .leading) {
+                HStack(spacing: 0) {
+                    Spacer(minLength: inset)
+                    NavPill(tab: browserState.activeTab, theme: browserState.activeTheme)
+                        .frame(width: width, height: CollapsedNavStripMetrics.pillHeight)
+                    Spacer(minLength: inset)
+                }
+
+                HStack(spacing: AlpTopBarMetrics.iconSpacing) {
+                    let theme = browserState.activeTheme
+                    AlpTopBarIconButton(symbol: "sidebar.left", help: "Toggle Sidebar (⌘S)", theme: theme) {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                            browserState.isSidebarCollapsed.toggle()
+                            browserState.isSidebarHoverPeeking = false
+                        }
+                    }
+                    AlpTopBarIconButton(
+                        symbol: "chevron.left", help: "Back (⌘[)", theme: theme,
+                        isEnabled: browserState.canGoBackInActiveTab
+                    ) { browserState.goBackInActiveTab() }
+                    AlpTopBarIconButton(
+                        symbol: "chevron.right", help: "Forward (⌘])", theme: theme,
+                        isEnabled: browserState.canGoForwardInActiveTab
+                    ) { browserState.goForwardInActiveTab() }
+                }
+                .padding(.leading, AlpTopBarMetrics.trafficLightInset)
             }
-            .frame(height: CollapsedNavStripMetrics.bandHeight)
+            .frame(width: geo.size.width, height: CollapsedNavStripMetrics.bandHeight)
         }
         .frame(height: CollapsedNavStripMetrics.bandHeight)
     }
@@ -321,7 +383,7 @@ struct CollapsedNavStripView: View {
         let tab: TabItem?
         let theme: SpaceTheme
 
-        private var isWeb: Bool { tab.map { $0.kind == .web } ?? false }
+        private var isWeb: Bool { tab.map { $0.kind == .web && !$0.isStartPage } ?? false }
 
         var body: some View {
             HStack(spacing: 8) {
@@ -402,7 +464,7 @@ struct CollapsedNavStripView: View {
                             .truncationMode(.tail)
                     }
                 }
-            } else if let tab {
+            } else if let tab, !tab.isStartPage {
                 Text(tab.displayTitle)
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(theme.foregroundColor.opacity(0.95))

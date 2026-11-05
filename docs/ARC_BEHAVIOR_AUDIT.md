@@ -17,18 +17,30 @@ Nothing is `matched` yet where it needs a real Mac build; CI cannot run the UI.
 
 ## 1. Quit warning (⌘Q, Alp Browser > Quit, Dock > Quit)
 
-- **Arc:** The owner reports Arc warns on ⌘Q. Exact wording, layout, buttons, whether a second ⌘Q confirms, whether
-  there is a "don't ask again"/Settings toggle, and whether it names tabs/spaces: **unknown — needs owner
-  screenshot/description.** No public source for the wording was reachable in the run that built this.
-- **Alp Browser now:** `applicationShouldTerminate` (`AlpBrowserApp.swift`) catches every quit route. The first
-  request cancels the quit and shows an in-window card (`QuitConfirmationView.swift`): Alp Browser icon,
-  "Quit Alp Browser?", a line naming open tabs and spaces, **Cancel** (Esc, click outside) and **Quit** (Return),
-  and "Press ⌘Q again to quit". ⌘Q or Quit while the card is up quits. Settings > General has "Warn before quitting"
-  (default on). System shutdown/restart/log-out are never blocked. Sessions save in `applicationWillTerminate` as before.
-- **Source:** owner report only; design is a best guess.
-- **Status:** needs-verification. The wording, the second-⌘Q confirm and the settings toggle are our assumptions.
-  Branding: the card uses `NSApp.applicationIconImage` (the Alp icon in effect), so no Arc logo can appear here.
-  The "Arc logo flash" from APP_HISTORY_NOTES could not be tested here (no Mac); a source grep found no Arc logo reference in the Swift code, so it was likely from the pre-rewrite tree. Confirm on a Mac.
+- **Rules update (run 18, 2026-11-05):** per the clean-room reframe in `CLEAN_ROOM_REWRITE.md` rule 1, behavior and
+  user-visible strings read from Arc.app's string tables/binary may be matched exactly. Code is never copied.
+- **Mechanism — SOURCED:** Arc drives quitting with `applicationShouldTerminate` + `handleTerminateReply(_:allowTerminateLater:)`
+  (deferred reply).
+- **Second ⌘Q quits immediately — INFERRED** from the `allowTerminateLater` signature (first ⌘Q shows the dialog and
+  defers; a second ⌘Q while it is up quits). Not observed directly. Alp implements it by returning `.terminateCancel`
+  on the first ask and `.terminateNow` while a card is up (same observable behavior, no `terminateLater` run-loop mode).
+- **Downloads-in-progress alert — SOURCED (exact):** title "Downloads in progress"; body "There are downloads in
+  progress. Closing the application will cancel them."; buttons Cancel (cancels the quit) and Quit (quits, cancelling
+  the downloads). Shown before the generic dialog, and even when "Warn before quitting" is off. Arc also cancels an
+  in-progress auto-update download on quit; Alp has no updater, so nothing to cancel.
+- **Generic quit confirmation — partly SOURCED:**
+  - Suppression button "Quit, and don't ask again" — SOURCED (exact). Quits and turns the warning off.
+  - Settings label "Warn before quitting" — SOURCED (exact). Key `alp_warn_before_quitting`, default on.
+  - Title ("Quit Alp Browser?") and body (open tab/space count) — **UNSOURCED.** Arc composes them at runtime, so the
+    text could not be recovered from its code. Run 17's best guess is kept. Screenshot Arc's dialog for a pixel-perfect match.
+- **Alp Browser now:** `applicationShouldTerminate` (`AlpBrowserApp.swift`) catches every quit route. Active downloads
+  (`DownloadTracker.hasActiveDownloads`, live transfers only; finished/failed ones are not counted) show the downloads
+  alert; otherwise "Warn before quitting" shows the confirmation card with Cancel, Quit and "Quit, and don't ask
+  again". Both are `QuitConfirmationView.swift`. Running downloads are cancelled in `applicationWillTerminate`.
+  System shutdown/restart/log-out are never blocked.
+- **`NSQuitAlwaysKeepsWindows` — SOURCED** (Arc has `arc_quitAlwaysKeepsWindows`): quitting keeps windows for restoration.
+  Alp already saves and restores its session, so no change.
+- **Status:** needs-verification on a Mac (UI cannot run in CI).
 
 ## 2. Command bar (⌘T, ⌘L)
 

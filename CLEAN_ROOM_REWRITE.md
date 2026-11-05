@@ -13,8 +13,11 @@ with **identical functionality and appearance** to the current build. Visual
 differentiation comes LATER — do not restyle now.
 
 ## Hard rules
-1. **No code copied from Arc.app** — not from its binary, resources, or any
-   decompiled/disassembled form. Every Swift file is written fresh.
+1. **No code copied from Arc.app.** Every Swift file is written fresh. *Reframe (Alp, 2026-11-05):* studying
+   Arc's code and resources (binary, string tables, resources) IS part of clean-room work: you need to know what
+   the browser does and looks like. Studying reference is allowed; copying source is not. The implementation must be
+   100% original code, never Arc source in the tree. Arc's observable behavior and user-visible strings may be pulled
+   from Arc.app as reference and matched exactly (rule 3 still bars Arc trademarks and logos).
 2. **No Arc proprietary assets.** `CustomGraphics/` and `Icons/` must be original
    work or replaced. If an asset's origin is Arc, redraw/recreate it.
 3. **No Arc trademarks in user-visible strings, no arc:// URLs, no Arc logo

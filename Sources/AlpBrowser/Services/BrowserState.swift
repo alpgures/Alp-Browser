@@ -43,8 +43,9 @@ public final class BrowserState: ObservableObject {
     @Published public var isThemePickerPresented: Bool = false
     @Published public var isLibrarySheetPresented: Bool = false
     @Published public var isSettingsPresented: Bool = false
-    /// True while the "Quit Alp Browser?" card is up. The app delegate owns the decision; this only drives the view.
-    @Published public var isQuitConfirmationPresented: Bool = false
+    /// Which quit card is up, if any. The app delegate owns the decision; this only drives the view.
+    public enum QuitPrompt { case downloads, confirmation }
+    @Published public var quitPrompt: QuitPrompt?
     /// Settings toggle. Kept in UserDefaults (not the sidebar store) so it applies before any state has loaded.
     @Published public var warnBeforeQuitting: Bool = UserDefaults.standard.object(forKey: "alp_warn_before_quitting") as? Bool ?? true {
         didSet { UserDefaults.standard.set(warnBeforeQuitting, forKey: "alp_warn_before_quitting") }

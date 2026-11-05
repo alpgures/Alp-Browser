@@ -350,15 +350,25 @@ public final class AlpAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelega
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Every quit route (⌘Q, Alp Browser > Quit, Dock > Quit) arrives here. The first ask shows the card and
-    /// cancels; ⌘Q or Quit pressed while the card is up confirms. Shutdown, restart and log-out are never blocked.
+    /// Every quit route (⌘Q, Alp Browser > Quit, Dock > Quit) arrives here. Active downloads get the downloads
+    /// alert; otherwise "Warn before quitting" gets the confirmation card. Either way the first ask cancels the quit
+    /// and shows the card, and ⌘Q or Quit pressed while a card is up quits right away. Shutdown, restart and
+    /// log-out are never blocked.
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let state = BrowserState.shared
-        if state.isQuitConfirmationPresented { return .terminateNow }
-        guard state.warnBeforeQuitting, !Self.isSystemInitiatedQuit,
+        if state.quitPrompt != nil { return .terminateNow }
+        guard !Self.isSystemInitiatedQuit,
               NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) else { return .terminateNow }
+        let prompt: BrowserState.QuitPrompt
+        if DownloadTracker.shared.hasActiveDownloads {
+            prompt = .downloads
+        } else if state.warnBeforeQuitting {
+            prompt = .confirmation
+        } else {
+            return .terminateNow
+        }
         withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
-            state.isQuitConfirmationPresented = true
+            state.quitPrompt = prompt
         }
         NSApp.activate(ignoringOtherApps: true)
         return .terminateCancel
@@ -373,6 +383,7 @@ public final class AlpAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelega
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
+        DownloadTracker.shared.cancelAll()
         BrowserState.shared.saveImmediately()
     }
 }

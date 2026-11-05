@@ -171,7 +171,7 @@ public struct MainBrowserWindow: View {
             }
 
             // 9. Quit confirmation (⌘Q / menu / Dock). Topmost so nothing can sit above it.
-            if browserState.isQuitConfirmationPresented {
+            if browserState.quitPrompt != nil {
                 QuitConfirmationView()
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
                     .zIndex(100)
@@ -217,8 +217,8 @@ public struct MainBrowserWindow: View {
             }
         }
         .onExitCommand {
-            if browserState.isQuitConfirmationPresented {
-                withAnimation(.easeOut(duration: 0.15)) { browserState.isQuitConfirmationPresented = false }
+            if browserState.quitPrompt != nil {
+                withAnimation(.easeOut(duration: 0.15)) { browserState.quitPrompt = nil }
             } else if browserState.isCommandBarPresented {
                 browserState.isCommandBarPresented = false
             } else if browserState.isLibrarySheetPresented {

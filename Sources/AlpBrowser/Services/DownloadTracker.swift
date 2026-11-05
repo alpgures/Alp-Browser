@@ -52,6 +52,7 @@ final class DownloadTracker: ObservableObject {
 
     private static let maxRecords = 500
     private var ids: [ObjectIdentifier: UUID] = [:]
+    private var downloads: [UUID: WKDownload] = [:]
     private var observers: [UUID: NSKeyValueObservation] = [:]
     private var sources: [UUID: (path: String, host: String?)] = [:]
 
@@ -67,10 +68,20 @@ final class DownloadTracker: ObservableObject {
         }
     }
 
+    /// True while at least one transfer is still running; a finished or failed download is not counted.
+    var hasActiveDownloads: Bool { !active.isEmpty }
+
+    /// Stops every running transfer. Called when the app quits.
+    func cancelAll() {
+        let running = Array(downloads.values)
+        for download in running { download.cancel { _ in } }
+    }
+
     func begin(_ download: WKDownload, destination: URL) {
         let id = UUID()
         let host = Self.sourceHost(of: download)
         ids[ObjectIdentifier(download)] = id
+        downloads[id] = download
         sources[id] = (destination.path, host)
         active.append(ActiveDownload(id: id, fileURL: destination, sourceHost: host, fraction: 0, receivedBytes: 0, totalBytes: 0))
 
@@ -88,6 +99,7 @@ final class DownloadTracker: ObservableObject {
     func end(_ download: WKDownload, failed: Bool = false) {
         guard let id = ids.removeValue(forKey: ObjectIdentifier(download)) else { return }
         observers.removeValue(forKey: id)?.invalidate()
+        downloads.removeValue(forKey: id)
         active.removeAll { $0.id == id }
         if let source = sources.removeValue(forKey: id) {
             records.insert(DownloadRecord(id: id, filePath: source.path, sourceHost: source.host,

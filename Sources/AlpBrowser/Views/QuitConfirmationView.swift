@@ -2,7 +2,7 @@
 //  QuitConfirmationView.swift
 //  Alp Browser
 //
-//  The in-window "Quit Alp Browser?" card shown on the first ⌘Q. Original Alp Browser design.
+//  The in-window card shown on the first ⌘Q: the downloads alert or the quit confirmation. Original Alp Browser design.
 //  Copyright © 2026 Alp Gures. All rights reserved.
 //
 
@@ -12,7 +12,14 @@ import AppKit
 struct QuitConfirmationView: View {
     @EnvironmentObject var browserState: BrowserState
 
+    private var isDownloadsAlert: Bool { browserState.quitPrompt == .downloads }
+
+    private var title: String {
+        isDownloadsAlert ? "Downloads in progress" : "Quit Alp Browser?"   // confirmation title: UNSOURCED
+    }
+
     private var detail: String {
+        if isDownloadsAlert { return "There are downloads in progress. Closing the application will cancel them." }
         let (tabs, spaces) = browserState.quitSummary
         guard tabs > 0 else { return "Your spaces and tabs are saved and will be here when you come back." }
         let tabText = tabs == 1 ? "1 open tab" : "\(tabs) open tabs"
@@ -21,11 +28,17 @@ struct QuitConfirmationView: View {
     }
 
     private func cancel() {
-        withAnimation(.easeOut(duration: 0.15)) { browserState.isQuitConfirmationPresented = false }
+        withAnimation(.easeOut(duration: 0.15)) { browserState.quitPrompt = nil }
     }
 
     private func confirm() {
-        // The flag stays up on purpose: applicationShouldTerminate sees it and lets the quit through.
+        // The prompt stays up on purpose: applicationShouldTerminate sees it and lets the quit through.
+        // Running downloads are cancelled in applicationWillTerminate.
+        NSApp.terminate(nil)
+    }
+
+    private func quitAndStopAsking() {
+        browserState.warnBeforeQuitting = false
         NSApp.terminate(nil)
     }
 
@@ -41,7 +54,7 @@ struct QuitConfirmationView: View {
                     .resizable()
                     .frame(width: 56, height: 56)
 
-                Text("Quit Alp Browser?")
+                Text(title)
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(.white)
 
@@ -65,6 +78,15 @@ struct QuitConfirmationView: View {
                     .buttonStyle(.borderedProminent)
                 }
                 .controlSize(.large)
+
+                if !isDownloadsAlert {
+                    Button(action: quitAndStopAsking) {
+                        Text("Quit, and don't ask again").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+                }
 
                 Text("Press ⌘Q again to quit")
                     .font(.system(size: 10.5, weight: .medium))

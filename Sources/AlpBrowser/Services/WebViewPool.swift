@@ -613,6 +613,23 @@ final class WebViewInstanceCoordinator: NSObject, WKNavigationDelegate, WKUIDele
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         pool?.browserState?.mutateTab(id: tabID) { tab in
             tab.isLoading = false
+            tab.estimatedProgress = 0
+        }
+    }
+
+    /// A failed or cancelled provisional navigation (DNS error, offline, user-cancelled) never reaches
+    /// didFinish/didFail, which used to leave the progress bar stuck on screen.
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        pool?.browserState?.mutateTab(id: tabID) { tab in
+            tab.isLoading = false
+            tab.estimatedProgress = 0
+        }
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        pool?.browserState?.mutateTab(id: tabID) { tab in
+            tab.isLoading = false
+            tab.estimatedProgress = 0
         }
     }
 
@@ -645,10 +662,20 @@ final class WebViewInstanceCoordinator: NSObject, WKNavigationDelegate, WKUIDele
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
         download.delegate = self
+        endLoadingState()
     }
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         download.delegate = self
+        endLoadingState()
+    }
+
+    /// A navigation that turns into a download never reports didFinish, so clear the loading state here.
+    private func endLoadingState() {
+        pool?.browserState?.mutateTab(id: tabID) { tab in
+            tab.isLoading = false
+            tab.estimatedProgress = 0
+        }
     }
 
     // MARK: - WKDownloadDelegate

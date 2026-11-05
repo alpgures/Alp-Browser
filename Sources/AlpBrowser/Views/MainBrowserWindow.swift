@@ -36,12 +36,20 @@ public struct MainBrowserWindow: View {
 
                 // Inset Web Viewport (Remains stationary; only the sidebar space slides)
                 viewportArea
-                    .padding(.top, 8)
+                    // With the sidebar hidden the page starts below the navigation strip, never under the traffic lights.
+                    .padding(.top, browserState.isSidebarCollapsed ? CollapsedNavStripMetrics.bandHeight : 8)
                     .padding(.bottom, 8)
                     .padding(.trailing, 8)
                     .padding(.leading, browserState.isSidebarCollapsed ? 8 : 2)
             }
             .ignoresSafeArea(.all, edges: .top)
+
+            // 2b. Collapsed-sidebar navigation strip (URL pill beside the traffic lights)
+            if browserState.isSidebarCollapsed {
+                CollapsedNavStripView()
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .transition(.opacity)
+            }
 
             // 3. Collapsed Sidebar Edge Hover Trigger
             if browserState.isSidebarCollapsed {
@@ -272,6 +280,139 @@ public struct MainBrowserWindow: View {
             )
         } else {
             Color.clear
+        }
+    }
+}
+
+// MARK: - Collapsed Sidebar Navigation Strip
+
+enum CollapsedNavStripMetrics {
+    /// Height of the titlebar band the page is pushed below.
+    static let bandHeight: CGFloat = 42
+    static let pillHeight: CGFloat = 30
+    static let pillMaxWidth: CGFloat = 520
+    /// Space reserved at the left for the traffic lights.
+    static let trafficLightInset: CGFloat = 84
+}
+
+/// Titlebar band shown while the sidebar is hidden: a centered, frosted URL pill for the active tab.
+/// Clicking it opens the command bar (⌘L does the same from the menu).
+struct CollapsedNavStripView: View {
+    @EnvironmentObject var browserState: BrowserState
+
+    var body: some View {
+        GeometryReader { geo in
+            let inset = CollapsedNavStripMetrics.trafficLightInset
+            // Centered on the window, but never wide enough to reach the traffic lights or the right edge.
+            let width = max(160, min(CollapsedNavStripMetrics.pillMaxWidth, geo.size.width - inset * 2))
+            HStack(spacing: 0) {
+                Spacer(minLength: inset)
+                NavPill(tab: browserState.activeTab, theme: browserState.activeTheme)
+                    .frame(width: width, height: CollapsedNavStripMetrics.pillHeight)
+                Spacer(minLength: inset)
+            }
+            .frame(height: CollapsedNavStripMetrics.bandHeight)
+        }
+        .frame(height: CollapsedNavStripMetrics.bandHeight)
+    }
+
+    private struct NavPill: View {
+        @EnvironmentObject var browserState: BrowserState
+        let tab: TabItem?
+        let theme: SpaceTheme
+
+        private var isWeb: Bool { tab.map { $0.kind == .web } ?? false }
+
+        var body: some View {
+            HStack(spacing: 8) {
+                Button {
+                    browserState.openCommandBar(prefilledWithCurrentURL: true)
+                } label: {
+                    HStack(spacing: 7) {
+                        leadingGlyph
+                        label
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Search or enter a URL (⌘L)")
+
+                if isWeb {
+                    Button {
+                        browserState.reloadActiveTab()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(theme.secondaryForegroundColor)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Reload Page (⌘R)")
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(maxHeight: .infinity)
+            .background(
+                ZStack {
+                    Capsule(style: .continuous).fill(.ultraThinMaterial)
+                    Capsule(style: .continuous).fill(theme.primaryColor.swiftUIColor.opacity(0.14))
+                }
+            )
+            .overlay(Capsule(style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+            .shadow(color: .black.opacity(0.14), radius: 6, y: 2)
+        }
+
+        @ViewBuilder
+        private var leadingGlyph: some View {
+            if tab?.isLoading == true {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.6)
+                    .frame(width: 12, height: 12)
+            } else if let tab, isWeb {
+                Image(systemName: tab.isSecure ? "lock.fill" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(theme.secondaryForegroundColor)
+                    .frame(width: 12, height: 12)
+            } else {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(theme.secondaryForegroundColor)
+                    .frame(width: 12, height: 12)
+            }
+        }
+
+        @ViewBuilder
+        private var label: some View {
+            if let tab, isWeb {
+                let domain = tab.simplifiedDomain
+                let title = tab.displayTitle
+                HStack(spacing: 6) {
+                    Text(domain)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(theme.foregroundColor.opacity(0.95))
+                        .lineLimit(1)
+                    if title != domain {
+                        Text(title)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(theme.secondaryForegroundColor)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+            } else if let tab {
+                Text(tab.displayTitle)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(theme.foregroundColor.opacity(0.95))
+                    .lineLimit(1)
+            } else {
+                Text("Search or Enter URL…")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(theme.secondaryForegroundColor)
+                    .lineLimit(1)
+            }
         }
     }
 }

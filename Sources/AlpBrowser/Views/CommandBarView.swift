@@ -343,6 +343,7 @@ public struct CommandBarView: View {
                     browserState.isCommandBarPresented = false
                 }
 
+            GeometryReader { geo in
             VStack(spacing: 0) {
                 // Top input row: leading glyph + large borderless field
                 HStack(spacing: 12) {
@@ -476,8 +477,10 @@ public struct CommandBarView: View {
                     .stroke(Color.white.opacity(0.14), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.45), radius: 32, y: 14)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .padding(.top, 150)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // Sits roughly a quarter of the way down the window, not glued to the top edge.
+            .padding(.top, max(150, geo.size.height * 0.24))
+            }
         }
         .onExitCommand {
             browserState.isCommandBarPresented = false

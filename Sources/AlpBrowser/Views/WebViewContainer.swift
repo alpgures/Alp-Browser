@@ -229,7 +229,8 @@ public struct ViewportPaneView: View {
                 NoteEditorView(noteID: noteID)
             }
 
-            // Top Loading Progress Bar
+            // Top Loading Progress Bar: sits on the top edge of the page, which is already below the
+            // collapsed-sidebar navigation strip, so it never overlaps the traffic lights or the URL pill.
             if tab.isLoading && tab.estimatedProgress < 1.0 {
                 GeometryReader { geo in
                     Rectangle()
@@ -247,6 +248,8 @@ public struct ViewportPaneView: View {
                         .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
                 }
                 .frame(height: 2.5)
+                .allowsHitTesting(false)
+                .transition(.opacity)
             }
 
             // Trackpad Back / Forward Navigation Edge Indicator

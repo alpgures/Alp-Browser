@@ -403,6 +403,7 @@ public struct SpaceThemePickerView: View {
 
 public struct SiteControlCenterPopoverView: View {
     @EnvironmentObject var browserState: BrowserState
+    @ObservedObject private var extensionManager = AlpExtensionManager.shared
     @State private var isDeveloperMode: Bool = false
     @State private var isPipAllowed: Bool = true
 
@@ -445,99 +446,55 @@ public struct SiteControlCenterPopoverView: View {
                 }
             }
 
-            // 2. Extensions Section
+            // 2. Extensions Section (Imported from Arc Browser)
             VStack(alignment: .leading, spacing: 8) {
                 Text("Extensions")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
 
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                    // Real Installed Extensions from AlpExtensionManager
-                    ForEach(AlpExtensionManager.shared.installedExtensions) { ext in
-                        extensionTile(
-                            icon: "puzzlepiece.extension.fill",
-                            color: ext.isEnabled ? Color.accentColor : Color.white.opacity(0.4),
-                            badge: nil,
-                            isPinned: ext.isEnabled
-                        ) {
+                    ForEach(Array(extensionManager.installedExtensions.enumerated()), id: \.element.id) { idx, ext in
+                        Button {
                             Task {
-                                await AlpExtensionManager.shared.toggleExtension(id: ext.id)
+                                await extensionManager.toggleExtension(id: ext.id)
+                            }
+                            browserState.showToast("\(ext.name) \(ext.isEnabled ? "disabled" : "enabled")")
+                        } label: {
+                            ZStack(alignment: .bottomTrailing) {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.white.opacity(ext.isEnabled ? 0.10 : 0.04))
+                                    .frame(width: 48, height: 48)
+                                    .overlay(
+                                        Group {
+                                            if let nsImg = ext.iconImage {
+                                                Image(nsImage: nsImg)
+                                                    .resizable()
+                                                    .aspectRatio(contentMode: .fit)
+                                                    .frame(width: 22, height: 22)
+                                                    .opacity(ext.isEnabled ? 1.0 : 0.4)
+                                            } else {
+                                                Image(systemName: "puzzlepiece.extension.fill")
+                                                    .font(.system(size: 16))
+                                                    .foregroundStyle(ext.isEnabled ? Color.accentColor : Color.white.opacity(0.4))
+                                            }
+                                        }
+                                    )
+
+                                if idx == 0 && ext.isEnabled {
+                                    Image(systemName: "pin.fill")
+                                        .font(.system(size: 7.5, weight: .bold))
+                                        .foregroundStyle(Color(red: 0.12, green: 0.14, blue: 0.17))
+                                        .padding(3.5)
+                                        .background(Circle().fill(Color.white))
+                                        .offset(x: 2, y: 2)
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
+                        .help("\(ext.name) (v\(ext.version))")
                     }
 
-                    // uBlock Origin / Built-in Adblock Tile
-                    extensionTile(
-                        icon: "shield.fill",
-                        color: Color(red: 0.95, green: 0.35, blue: 0.55),
-                        badge: nil,
-                        isPinned: browserState.adBlockerEnabled
-                    ) {
-                        browserState.adBlockerEnabled.toggle()
-                        browserState.scheduleSave()
-                    }
-
-                    // Cookie AutoDelete / Privacy
-                    extensionTile(
-                        icon: "circle.hexagongrid.fill",
-                        color: Color(red: 0.88, green: 0.65, blue: 0.45),
-                        badge: nil,
-                        isPinned: false
-                    ) {
-                        browserState.showToast("Privacy shield active")
-                    }
-
-                    // Reader Mode / Script Blocker
-                    extensionTile(
-                        icon: "doc.text.fill",
-                        color: Color.white.opacity(0.85),
-                        badge: "20",
-                        isPinned: false
-                    ) {
-                        browserState.showToast("Clean page reader active")
-                    }
-
-                    // Copy Page Elements
-                    extensionTile(
-                        icon: "doc.on.doc.fill",
-                        color: Color.white.opacity(0.85),
-                        badge: nil,
-                        isPinned: false
-                    ) {
-                        browserState.showToast("Page markdown copied")
-                    }
-
-                    // Download Media
-                    extensionTile(
-                        icon: "arrow.down",
-                        color: Color.white.opacity(0.85),
-                        badge: nil,
-                        isPinned: false
-                    ) {
-                        browserState.showToast("Media downloader ready")
-                    }
-
-                    // Meta Inspector
-                    extensionTile(
-                        icon: "m.circle.fill",
-                        color: Color(red: 0.35, green: 0.75, blue: 0.75),
-                        badge: nil,
-                        isPinned: false
-                    ) {
-                        browserState.showToast("Meta tags inspected")
-                    }
-
-                    // Security Scanner
-                    extensionTile(
-                        icon: "shield.lefthalf.filled",
-                        color: Color(red: 0.90, green: 0.25, blue: 0.30),
-                        badge: "2",
-                        isPinned: false
-                    ) {
-                        browserState.showToast("2 trackers intercepted")
-                    }
-
-                    // Add Extension Button
+                    // Add / Manage Extensions Button
                     Button {
                         browserState.isSiteControlCenterPresented = false
                         browserState.isSettingsPresented = true

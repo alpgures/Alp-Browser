@@ -44,6 +44,7 @@ public final class BrowserState: ObservableObject {
     @Published public var isTabSwitcherPresented: Bool = false
     @Published public var tabSwitcherSelectedIndex: Int = 0
     @Published public var draggedTabID: UUID?
+    @Published public var splitRatio: CGFloat = 0.5
 
     // MARK: - Features State (Page Styles, Canvas, Notes, Archive)
     @Published public var styles: [PageMod] = []
@@ -1024,6 +1025,7 @@ public final class BrowserState: ObservableObject {
     }
 
     public func importFromInstalledArcBrowser() {
+        _ = AlpExtensionManager.shared.importExtensionsFromArc(silent: true)
         if AlpSidebarImporter.isArcInstalledDataAvailable {
             do {
                 let imported = try AlpSidebarImporter.importFromArc()
@@ -1033,7 +1035,7 @@ public final class BrowserState: ObservableObject {
                 self.activeSpaceID = imported.spaces.first?.id
                 self.hasImportedFromArc = true
                 scheduleSave()
-                showToast("Imported \(imported.totalImportedTabs) tabs and \(imported.archivedTabs.count) archived tabs")
+                showToast("Imported \(imported.totalImportedTabs) tabs, \(imported.archivedTabs.count) archived, and \(AlpExtensionManager.shared.installedExtensions.count) extensions from Arc")
                 return
             } catch {
                 print("Sidebar import failed: \(error)")

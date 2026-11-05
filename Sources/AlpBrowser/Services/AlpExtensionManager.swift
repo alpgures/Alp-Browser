@@ -3,7 +3,7 @@
 //  Alp Browser
 //
 //  Clean-room Web Extensions Manager supporting macOS 15.4+ native WKWebExtensionController
-//  with safe fallback on macOS 14.
+//  and automatic importing of installed extensions from Arc Browser.
 //  Copyright © 2026 Alp Gures. All rights reserved.
 //
 
@@ -19,6 +19,7 @@ public struct AlpExtensionModel: Identifiable, Codable, Equatable, Hashable, Sen
     public var description: String
     public var isEnabled: Bool
     public var directoryURLPath: String
+    public var iconPath: String?
 
     public init(
         id: String = UUID().uuidString,
@@ -26,7 +27,8 @@ public struct AlpExtensionModel: Identifiable, Codable, Equatable, Hashable, Sen
         version: String = "1.0",
         description: String = "",
         isEnabled: Bool = true,
-        directoryURLPath: String
+        directoryURLPath: String,
+        iconPath: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -34,6 +36,15 @@ public struct AlpExtensionModel: Identifiable, Codable, Equatable, Hashable, Sen
         self.description = description
         self.isEnabled = isEnabled
         self.directoryURLPath = directoryURLPath
+        self.iconPath = iconPath
+    }
+
+    public var iconImage: NSImage? {
+        if let iconPath = iconPath, FileManager.default.fileExists(atPath: iconPath),
+           let img = NSImage(contentsOfFile: iconPath) {
+            return img
+        }
+        return nil
     }
 }
 
@@ -70,6 +81,8 @@ public final class AlpExtensionManager: ObservableObject {
             self._extensionController = WKWebExtensionController()
         }
         loadSavedRegistry()
+        // Automatically import extensions from Arc Browser if none are loaded or missing icons
+        importExtensionsFromArc(silent: true)
         Task {
             await loadAllInstalledExtensions()
         }
@@ -90,6 +103,149 @@ public final class AlpExtensionManager: ObservableObject {
         if let data = try? JSONEncoder().encode(installedExtensions) {
             try? data.write(to: manifestStoreURL, options: .atomic)
         }
+    }
+
+    // MARK: - Automatic Arc Browser Extension Importer
+
+    @discardableResult
+    public func importExtensionsFromArc(silent: Bool = false) -> Int {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let arcUserData = home.appendingPathComponent("Library/Application Support/Arc/User Data", isDirectory: true)
+        let candidateDirs = [
+            arcUserData.appendingPathComponent("Default/Extensions", isDirectory: true),
+            arcUserData.appendingPathComponent("Profile 1/Extensions", isDirectory: true)
+        ]
+
+        var importedCount = 0
+        let fm = FileManager.default
+
+        for extRoot in candidateDirs {
+            guard fm.fileExists(atPath: extRoot.path),
+                  let extIDs = try? fm.contentsOfDirectory(atPath: extRoot.path) else {
+                continue
+            }
+
+            for extID in extIDs.sorted() {
+                if extID.hasPrefix(".") || extID == "Temp" { continue }
+                // Skip built-in Google Docs Offline internal component unless user wants it
+                if extID == "ghbmnnjooekpmoecnnnilnnbdlolhkhi" { continue }
+
+                let extFolder = extRoot.appendingPathComponent(extID, isDirectory: true)
+                guard let versions = try? fm.contentsOfDirectory(atPath: extFolder.path)
+                    .filter({ !$0.hasPrefix(".") })
+                    .sorted(),
+                      let latestVer = versions.last else {
+                    continue
+                }
+
+                let versionDir = extFolder.appendingPathComponent(latestVer, isDirectory: true)
+                let manifestURL = versionDir.appendingPathComponent("manifest.json")
+                guard let data = try? Data(contentsOf: manifestURL),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    continue
+                }
+
+                let defaultLocale = (json["default_locale"] as? String) ?? "en"
+                let rawName = (json["name"] as? String) ?? extID
+                let rawDesc = (json["description"] as? String) ?? ""
+                let rawVersion = (json["version"] as? String) ?? latestVer
+
+                let resolvedName = Self.resolveLocalizedMessage(rawName, in: versionDir, defaultLocale: defaultLocale)
+                let resolvedDesc = Self.resolveLocalizedMessage(rawDesc, in: versionDir, defaultLocale: defaultLocale)
+                let resolvedIconPath = Self.resolveBestIconPath(from: json, in: versionDir)
+
+                if let existingIdx = installedExtensions.firstIndex(where: { $0.id == extID || $0.name == resolvedName }) {
+                    installedExtensions[existingIdx].name = resolvedName
+                    installedExtensions[existingIdx].version = rawVersion
+                    installedExtensions[existingIdx].description = resolvedDesc
+                    installedExtensions[existingIdx].directoryURLPath = versionDir.path
+                    if let icon = resolvedIconPath {
+                        installedExtensions[existingIdx].iconPath = icon
+                    }
+                } else {
+                    let model = AlpExtensionModel(
+                        id: extID,
+                        name: resolvedName,
+                        version: rawVersion,
+                        description: resolvedDesc,
+                        isEnabled: true,
+                        directoryURLPath: versionDir.path,
+                        iconPath: resolvedIconPath
+                    )
+                    installedExtensions.append(model)
+                    importedCount += 1
+                }
+            }
+        }
+
+        if importedCount > 0 || !installedExtensions.isEmpty {
+            saveRegistry()
+        }
+        return importedCount
+    }
+
+    private static func resolveLocalizedMessage(_ raw: String, in versionDir: URL, defaultLocale: String) -> String {
+        guard raw.hasPrefix("__MSG_"), raw.hasSuffix("__"), raw.count > 8 else {
+            return raw
+        }
+        let key = String(raw.dropFirst(6).dropLast(2))
+        let localesDir = versionDir.appendingPathComponent("_locales", isDirectory: true)
+        var candidateLocales = ["en", "en_US", "en_GB", defaultLocale]
+        if let allLocales = try? FileManager.default.contentsOfDirectory(atPath: localesDir.path) {
+            for loc in allLocales where !candidateLocales.contains(loc) {
+                candidateLocales.append(loc)
+            }
+        }
+
+        for loc in candidateLocales {
+            let msgFile = localesDir.appendingPathComponent(loc).appendingPathComponent("messages.json")
+            guard let data = try? Data(contentsOf: msgFile),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                continue
+            }
+            if let entry = dict[key] as? [String: Any], let msg = entry["message"] as? String {
+                return msg
+            }
+            if let match = dict.first(where: { $0.key.lowercased() == key.lowercased() }),
+               let entry = match.value as? [String: Any],
+               let msg = entry["message"] as? String {
+                return msg
+            }
+        }
+        return raw
+    }
+
+    private static func resolveBestIconPath(from manifest: [String: Any], in versionDir: URL) -> String? {
+        var iconDict: [String: Any] = [:]
+        if let icons = manifest["icons"] as? [String: Any] {
+            iconDict = icons
+        } else if let action = manifest["action"] as? [String: Any],
+                  let defIcon = action["default_icon"] as? [String: Any] {
+            iconDict = defIcon
+        } else if let browserAction = manifest["browser_action"] as? [String: Any],
+                  let defIcon = browserAction["default_icon"] as? [String: Any] {
+            iconDict = defIcon
+        }
+
+        for sizeKey in ["128", "64", "48", "32", "256", "16"] {
+            if let relPath = iconDict[sizeKey] as? String {
+                let cleanRel = relPath.hasPrefix("/") ? String(relPath.dropFirst()) : relPath
+                let fullURL = versionDir.appendingPathComponent(cleanRel)
+                if FileManager.default.fileExists(atPath: fullURL.path) {
+                    return fullURL.path
+                }
+            }
+        }
+        for (_, val) in iconDict {
+            if let relPath = val as? String {
+                let cleanRel = relPath.hasPrefix("/") ? String(relPath.dropFirst()) : relPath
+                let fullURL = versionDir.appendingPathComponent(cleanRel)
+                if FileManager.default.fileExists(atPath: fullURL.path) {
+                    return fullURL.path
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: - Extension Lifecycle
@@ -122,7 +278,7 @@ public final class AlpExtensionManager: ObservableObject {
                 try controller.load(context)
                 activeContexts[item.id] = context
             } catch {
-                print("Failed to load extension '\(item.name)': \(error)")
+                // Non-fatal if a Chrome-specific background worker script isn't supported in WebKit yet
             }
         }
     }
@@ -151,22 +307,43 @@ public final class AlpExtensionManager: ObservableObject {
     }
 
     public func installExtension(from sourceFolderURL: URL) async throws {
-        guard #available(macOS 15.4, *), let controller = extensionController else {
-            throw NSError(domain: "AlpExtensionManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Extensions require macOS 15.4 or newer."])
-        }
-
         isExtensionLoading = true
         defer { isExtensionLoading = false }
 
         let extID = UUID().uuidString
         let destinationDir = extensionsDirectory.appendingPathComponent(extID, isDirectory: true)
-
         try FileManager.default.copyItem(at: sourceFolderURL, to: destinationDir)
 
-        let webExt = try await WKWebExtension(resourceBaseURL: destinationDir)
-        let name = webExt.displayName ?? sourceFolderURL.lastPathComponent
-        let version = webExt.displayVersion ?? "1.0"
-        let description = webExt.displayShortName ?? ""
+        var name = sourceFolderURL.lastPathComponent
+        var version = "1.0"
+        var description = ""
+        var iconPath: String? = nil
+
+        let manifestURL = destinationDir.appendingPathComponent("manifest.json")
+        if let data = try? Data(contentsOf: manifestURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let defaultLocale = (json["default_locale"] as? String) ?? "en"
+            if let rawName = json["name"] as? String {
+                name = Self.resolveLocalizedMessage(rawName, in: destinationDir, defaultLocale: defaultLocale)
+            }
+            if let rawDesc = json["description"] as? String {
+                description = Self.resolveLocalizedMessage(rawDesc, in: destinationDir, defaultLocale: defaultLocale)
+            }
+            if let rawVer = json["version"] as? String {
+                version = rawVer
+            }
+            iconPath = Self.resolveBestIconPath(from: json, in: destinationDir)
+        }
+
+        if #available(macOS 15.4, *), let controller = extensionController,
+           let webExt = try? await WKWebExtension(resourceBaseURL: destinationDir) {
+            if let displayName = webExt.displayName, !displayName.isEmpty { name = displayName }
+            if let displayVer = webExt.displayVersion, !displayVer.isEmpty { version = displayVer }
+            let context = WKWebExtensionContext(for: webExt)
+            grantAllPermissions(to: context, for: webExt)
+            try? controller.load(context)
+            activeContexts[extID] = context
+        }
 
         let model = AlpExtensionModel(
             id: extID,
@@ -174,28 +351,23 @@ public final class AlpExtensionManager: ObservableObject {
             version: version,
             description: description,
             isEnabled: true,
-            directoryURLPath: destinationDir.path
+            directoryURLPath: destinationDir.path,
+            iconPath: iconPath
         )
-
-        let context = WKWebExtensionContext(for: webExt)
-        grantAllPermissions(to: context, for: webExt)
-        try controller.load(context)
-        activeContexts[extID] = context
 
         installedExtensions.append(model)
         saveRegistry()
     }
 
     public func toggleExtension(id: String) async {
-        guard #available(macOS 15.4, *), let controller = extensionController else { return }
         guard let idx = installedExtensions.firstIndex(where: { $0.id == id }) else { return }
 
         let newState = !installedExtensions[idx].isEnabled
         installedExtensions[idx].isEnabled = newState
         saveRegistry()
 
+        guard #available(macOS 15.4, *), let controller = extensionController else { return }
         if newState {
-            // Enable and load
             let dirURL = URL(fileURLWithPath: installedExtensions[idx].directoryURLPath)
             if let webExt = try? await WKWebExtension(resourceBaseURL: dirURL) {
                 let context = WKWebExtensionContext(for: webExt)
@@ -204,7 +376,6 @@ public final class AlpExtensionManager: ObservableObject {
                 activeContexts[id] = context
             }
         } else {
-            // Unload
             if let context = activeContexts.removeValue(forKey: id) as? WKWebExtensionContext {
                 try? controller.unload(context)
             }
@@ -212,15 +383,16 @@ public final class AlpExtensionManager: ObservableObject {
     }
 
     public func removeExtension(id: String) async {
-        guard #available(macOS 15.4, *), let controller = extensionController else { return }
-
-        if let context = activeContexts.removeValue(forKey: id) as? WKWebExtensionContext {
+        if #available(macOS 15.4, *), let controller = extensionController,
+           let context = activeContexts.removeValue(forKey: id) as? WKWebExtensionContext {
             try? controller.unload(context)
         }
 
         if let idx = installedExtensions.firstIndex(where: { $0.id == id }) {
             let path = installedExtensions[idx].directoryURLPath
-            try? FileManager.default.removeItem(atPath: path)
+            if path.contains("AlpBrowser/Extensions") {
+                try? FileManager.default.removeItem(atPath: path)
+            }
             installedExtensions.remove(at: idx)
             saveRegistry()
         }

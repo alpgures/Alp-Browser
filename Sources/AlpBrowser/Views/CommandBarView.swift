@@ -2,11 +2,13 @@
 //  CommandBarView.swift
 //  Alp Browser
 //
-//  Floating Command Bar (⌘T / ⌘L) for navigation, searches, and actions.
+//  Floating Command Bar (⌘T / ⌘L) matching Arc's single-line layout.
 //  Copyright © 2026 Alp Gures. All rights reserved.
 //
 
 import SwiftUI
+import AppKit
+import Foundation
 
 public struct CommandBarView: View {
     @EnvironmentObject var browserState: BrowserState
@@ -25,16 +27,26 @@ public struct CommandBarView: View {
         let icon: String
         let favicon: NSImage?
         let title: String
-        let subtitle: String
-        let badge: String
+        let isTabSwitch: Bool
+        let isActionRow: Bool
+        let shortcutBadge: String?
         let action: () -> Void
 
-        init(icon: String, favicon: NSImage? = nil, title: String, subtitle: String, badge: String, action: @escaping () -> Void) {
+        init(
+            icon: String,
+            favicon: NSImage? = nil,
+            title: String,
+            isTabSwitch: Bool = false,
+            isActionRow: Bool = false,
+            shortcutBadge: String? = nil,
+            action: @escaping () -> Void
+        ) {
             self.icon = icon
             self.favicon = favicon
             self.title = title
-            self.subtitle = subtitle
-            self.badge = badge
+            self.isTabSwitch = isTabSwitch
+            self.isActionRow = isActionRow
+            self.shortcutBadge = shortcutBadge
             self.action = action
         }
     }
@@ -46,15 +58,16 @@ public struct CommandBarView: View {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = trimmed.lowercased()
 
-        // 1. Primary URL or Web Search Action
+        // 1. Primary URL or Web Search Action when user types
         if !trimmed.isEmpty {
-            let isLikelyURL = !trimmed.contains(" ") && (trimmed.contains(".") || trimmed.hasPrefix("http") || trimmed.hasPrefix("localhost"))
+            let isLikelyURL = !trimmed.contains(" ") && (trimmed.contains(".") || trimmed.hasPrefix("http") || trimmed.hasPrefix("localhost") || trimmed.hasPrefix("alp://"))
             list.append(
                 CommandSuggestion(
                     icon: isLikelyURL ? "globe" : "magnifyingglass",
-                    title: isLikelyURL ? "Open \(trimmed)" : "Search Google for “\(trimmed)”",
-                    subtitle: isLikelyURL ? browserState.resolveInputToURLString(trimmed) : "Google Search",
-                    badge: openInCurrentTab ? "Navigate ↵" : "New Tab ↵",
+                    title: isLikelyURL ? trimmed : "\(trimmed) — Google Search",
+                    isTabSwitch: false,
+                    isActionRow: false,
+                    shortcutBadge: openInCurrentTab ? "Open ↵" : "New Tab ↵",
                     action: {
                         browserState.handleCommandBarInput(trimmed, openInNewTab: !openInCurrentTab)
                     }
@@ -62,81 +75,114 @@ public struct CommandBarView: View {
             )
         }
 
-        // 2. Open Tabs Matching Query ("Switch to Tab")
-        let allTabs = browserState.favorites + browserState.spaces.flatMap { $0.allTabs }
-        let matchingTabs = allTabs.filter { tab in
-            guard !lower.isEmpty else { return true }
-            return tab.displayTitle.lowercased().contains(lower) || tab.urlString.lowercased().contains(lower)
-        }
+        // 2. Open / Pinned Tabs Matching Query ("Switch to Tab") — single-line, skipping extension new-tab placeholders
+        var seenTabIDs = Set<UUID>()
+        var seenTitles = Set<String>()
+        let candidateTabs = (browserState.activeSpace.todayTabs + browserState.activeSpace.pinnedNodes.flatMap { $0.allTabs } + browserState.favorites + browserState.spaces.flatMap { $0.allTabs })
+        for tab in candidateTabs {
+            guard !seenTabIDs.contains(tab.id) else { continue }
+            seenTabIDs.insert(tab.id)
 
-        for tab in matchingTabs.prefix(trimmed.isEmpty ? 5 : 7) {
+            let urlLower = tab.urlString.lowercased()
+            if urlLower.hasPrefix("chrome-extension://") || urlLower == "about:blank" {
+                continue
+            }
+            let title = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            if title.isEmpty || title.lowercased() == "new tab" {
+                continue
+            }
+            guard !seenTitles.contains(title.lowercased()) else { continue }
+
+            if !lower.isEmpty {
+                let matches = title.lowercased().contains(lower) || urlLower.contains(lower)
+                if !matches { continue }
+            }
+
+            seenTitles.insert(title.lowercased())
             let fav = FaviconCache.shared.favicon(for: tab.urlString)
             list.append(
                 CommandSuggestion(
-                    icon: tab.isFavorite ? "star.fill" : (tab.isPinned ? "pin.fill" : "globe"),
+                    icon: "globe",
                     favicon: fav,
-                    title: tab.displayTitle,
-                    subtitle: tab.simplifiedDomain,
-                    badge: "Switch to Tab",
+                    title: title,
+                    isTabSwitch: true,
                     action: {
                         browserState.selectTab(tab.id)
                         browserState.isCommandBarPresented = false
                     }
                 )
             )
-        }
-
-        // 3. Built-in Alp Browser Actions
-        let actions: [(keywords: String, icon: String, title: String, subtitle: String, badge: String, run: () -> Void)] = [
-            ("split view pane side", "rectangle.split.2x1", "Add Split View", "Open side-by-side pane in active Space", "⌃⇧=", {
-                browserState.isCommandBarPresented = false
-                browserState.addSplitPane()
-            }),
-            ("canvas board note draw", "scribble.variable", "New Canvas", "Create a visual board for notes and cards", "Action", {
-                browserState.isCommandBarPresented = false
-                browserState.createNewCanvas(title: trimmed.isEmpty ? "Untitled Canvas" : trimmed)
-            }),
-            ("note markdown text editor", "note.text.badge.plus", "New Note", "Create a clean distraction-free note", "Action", {
-                browserState.isCommandBarPresented = false
-                browserState.createNewNote(title: trimmed.isEmpty ? "Quick Note" : trimmed)
-            }),
-            ("hibernate memory ram sleep unload", "moon.zzz.fill", "Hibernate Background Tabs (0 MB RAM)", "Unload all inactive WebViews to free memory", "Memory", {
-                browserState.isCommandBarPresented = false
-                Task { await browserState.hibernateAllBackgroundTabsNow() }
-            }),
-            ("style css zapper customize mod", "bolt.fill", "Customize Page Style", "Adjust colors, fonts, CSS, or hide page elements", "Style", {
-                browserState.isCommandBarPresented = false
-                browserState.isStyleStudioPresented = true
-            }),
-            ("theme color gradient space grain", "paintpalette.fill", "Space Theme Editor", "Change colors, vibrancy, and frosted grain", "Theme", {
-                browserState.isCommandBarPresented = false
-                browserState.isThemePickerPresented = true
-            }),
-            ("sync backup vault cloud server", "arrow.triangle.2.circlepath", "Sync Vault Now", "Upload encrypted state to your sync vault", "Sync", {
-                browserState.isCommandBarPresented = false
-                Task { await browserState.syncNow() }
-            }),
-            ("import arc browser storable sidebar", "arrow.down.doc.fill", "Import Spaces from Arc", "Import spaces, favorites, and themes from Arc.app", "Import", {
-                browserState.isCommandBarPresented = false
-                browserState.importFromInstalledArcBrowser()
-            })
-        ]
-
-        for act in actions {
-            if lower.isEmpty || act.keywords.contains(lower) || act.title.lowercased().contains(lower) {
-                list.append(
-                    CommandSuggestion(
-                        icon: act.icon,
-                        title: act.title,
-                        subtitle: act.subtitle,
-                        badge: act.badge,
-                        action: act.run
-                    )
-                )
+            if list.count >= (trimmed.isEmpty ? 4 : 5) {
+                break
             }
         }
 
-        return Array(list.prefix(9))
+        // 3. Built-in Actions (Arc shows 1 subtle action row at the bottom when query is empty, or matching actions when typing)
+        let actions: [(keywords: String, icon: String, title: String, badge: String?, run: () -> Void)] = [
+            ("split view pane side", "rectangle.split.2x1", "Add Split View", "⌃⇧=", {
+                browserState.isCommandBarPresented = false
+                browserState.addSplitPane()
+            }),
+            ("easel canvas board draw", "pencil.tip.crop.circle", "New Easel", nil, {
+                browserState.isCommandBarPresented = false
+                browserState.createNewCanvas(title: trimmed.isEmpty ? "Untitled Easel" : trimmed)
+            }),
+            ("note markdown text editor", "note.text", "New Note", nil, {
+                browserState.isCommandBarPresented = false
+                browserState.createNewNote(title: trimmed.isEmpty ? "Quick Note" : trimmed)
+            }),
+            ("theme color gradient space", "paintpalette", "Edit Space Theme…", nil, {
+                browserState.isCommandBarPresented = false
+                browserState.isThemePickerPresented = true
+            }),
+            ("boost style css zapper customize", "wand.and.stars", "New Boost…", nil, {
+                browserState.isCommandBarPresented = false
+                browserState.isStyleStudioPresented = true
+            }),
+            ("settings preferences extensions", "gearshape", "Open Settings…", "⌘,", {
+                browserState.isCommandBarPresented = false
+                browserState.isSettingsPresented = true
+            })
+        ]
+
+        if lower.isEmpty {
+            if let firstAct = actions.first {
+                list.append(
+                    CommandSuggestion(
+                        icon: firstAct.icon,
+                        title: firstAct.title,
+                        isTabSwitch: false,
+                        isActionRow: true,
+                        shortcutBadge: nil,
+                        action: firstAct.run
+                    )
+                )
+            }
+        } else {
+            for act in actions {
+                if act.keywords.contains(lower) || act.title.lowercased().contains(lower) {
+                    list.append(
+                        CommandSuggestion(
+                            icon: act.icon,
+                            title: act.title,
+                            isTabSwitch: false,
+                            isActionRow: true,
+                            shortcutBadge: act.badge,
+                            action: act.run
+                        )
+                    )
+                }
+            }
+        }
+
+        return Array(list.prefix(6))
+    }
+
+    /// Selection bar color derived from the active space theme (matching Arc's muted slate-teal highlight)
+    private var selectionBarColor: Color {
+        let p = browserState.activeTheme.primaryColor
+        let blended = p.darkened(by: 0.35).blended(with: RGBAColor(red: 0.21, green: 0.45, blue: 0.52), fraction: 0.55)
+        return blended.swiftUIColor
     }
 
     public var body: some View {
@@ -150,17 +196,21 @@ public struct CommandBarView: View {
                 }
 
             VStack(spacing: 0) {
-                // Search Input Box
-                HStack(spacing: 12) {
+                // Top Search Input Row (Matches Arc: magnifyingglass, query field, info.circle on right)
+                HStack(spacing: 11) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.65))
+                        .frame(width: 20, height: 20)
 
                     TextField("Search or Enter URL...", text: $query)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 15.5, weight: .medium))
                         .foregroundStyle(.white)
                         .focused($isInputFocused)
+                        .onChange(of: query) { _, _ in
+                            selectedIndex = 0
+                        }
                         .onKeyPress(.escape) {
                             browserState.isCommandBarPresented = false
                             return .handled
@@ -181,121 +231,95 @@ public struct CommandBarView: View {
                             executeSelectedOrSubmit()
                         }
 
-                    if !query.isEmpty {
-                        Button {
-                            query = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(.white.opacity(0.6))
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    Spacer(minLength: 4)
 
                     Image(systemName: "info.circle")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.48))
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 13)
-                .background(Color(red: 0.12, green: 0.12, blue: 0.15))
+                .padding(.top, 14)
+                .padding(.bottom, 10)
 
-                Divider().background(Color.white.opacity(0.12))
-
-                // Suggestion List
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 3) {
+                // Single-line Suggestion Rows (No divider line, fits all rows cleanly without clipping)
+                if !suggestions.isEmpty {
+                    VStack(spacing: 2) {
                         ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, item in
                             let isSelected = (index == selectedIndex)
                             Button {
                                 item.action()
                             } label: {
-                                HStack(spacing: 12) {
-                                    // Favicon or System Icon
-                                    Group {
-                                        if let fav = item.favicon {
-                                            Image(nsImage: fav)
-                                                .resizable()
-                                                .aspectRatio(contentMode: .fit)
-                                                .frame(width: 16, height: 16)
-                                        } else {
-                                            Image(systemName: item.icon)
-                                                .font(.system(size: 13, weight: .medium))
-                                                .foregroundStyle(isSelected ? .white : browserState.activeTheme.accentColor.swiftUIColor)
-                                                .frame(width: 16, height: 16)
-                                        }
-                                    }
-                                    .frame(width: 20)
+                                HStack(spacing: 11) {
+                                    // Leading Icon / Favicon Badge (Matches Arc's 20x20 rounded square on selected/action rows)
+                                    suggestionIconView(for: item, isSelected: isSelected)
 
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.title)
-                                            .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                                            .foregroundStyle(.white)
-                                            .lineLimit(1)
-                                        if !item.subtitle.isEmpty {
-                                            Text(item.subtitle)
-                                                .font(.system(size: 11))
-                                                .foregroundStyle(.white.opacity(0.6))
-                                                .lineLimit(1)
-                                        }
-                                    }
+                                    Text(item.title)
+                                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                                        .foregroundStyle(isSelected ? .white : .white.opacity(0.84))
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
 
-                                    Spacer()
+                                    Spacer(minLength: 12)
 
-                                    // Action Badge / Switch to Tab Indicator
-                                    if item.badge == "Switch to Tab" {
-                                        HStack(spacing: 7) {
+                                    // Trailing "Switch to Tab [→]" or Shortcut Badge
+                                    if item.isTabSwitch {
+                                        HStack(spacing: 8) {
                                             Text("Switch to Tab")
-                                                .font(.system(size: 11.5, weight: .medium))
-                                                .foregroundStyle(isSelected ? .white : .white.opacity(0.40))
+                                                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                                                .foregroundStyle(isSelected ? .white : .white.opacity(0.45))
 
                                             Image(systemName: "arrow.right")
-                                                .font(.system(size: 9.5, weight: .bold))
-                                                .foregroundStyle(isSelected ? Color(red: 0.17, green: 0.45, blue: 0.52) : .white.opacity(0.60))
-                                                .frame(width: 17, height: 17)
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundStyle(isSelected ? selectionBarColor : .white.opacity(0.65))
+                                                .frame(width: 19, height: 19)
                                                 .background(
-                                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                                        .fill(isSelected ? Color.white : Color.white.opacity(0.10))
+                                                    RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                                                        .fill(isSelected ? Color.white : Color.white.opacity(0.08))
                                                 )
                                         }
-                                    } else {
-                                        Text(item.badge)
-                                            .font(.system(size: 10.5, weight: .medium))
-                                            .foregroundStyle(isSelected ? .white : .white.opacity(0.55))
+                                    } else if let badge = item.shortcutBadge {
+                                        Text(badge)
+                                            .font(.system(size: 11, weight: .medium))
+                                            .foregroundStyle(isSelected ? .white : .white.opacity(0.48))
                                             .padding(.horizontal, 7)
-                                            .padding(.vertical, 3)
+                                            .padding(.vertical, 2.5)
                                             .background(
-                                                Capsule()
+                                                RoundedRectangle(cornerRadius: 4.5, style: .continuous)
                                                     .fill(Color.white.opacity(isSelected ? 0.22 : 0.08))
                                             )
                                     }
                                 }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
+                                .padding(.horizontal, 10)
+                                .frame(height: 36)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(isSelected ? Color(red: 0.17, green: 0.45, blue: 0.52) : Color.clear)
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .fill(isSelected ? selectionBarColor : Color.clear)
                                 )
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .onHover { hovering in
+                                if hovering {
+                                    selectedIndex = index
+                                }
+                            }
                         }
                     }
-                    .padding(8)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
                 }
-                .frame(maxHeight: 340)
             }
-            .frame(width: 620)
+            .frame(width: 560)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(red: 0.10, green: 0.10, blue: 0.13))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(red: 0.095, green: 0.095, blue: 0.105))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.white.opacity(0.20), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.55), radius: 30, y: 14)
-            .padding(.bottom, 120)
+            .shadow(color: .black.opacity(0.55), radius: 28, y: 12)
+            .padding(.bottom, 80)
         }
         .onExitCommand {
             browserState.isCommandBarPresented = false
@@ -333,11 +357,54 @@ public struct CommandBarView: View {
         }
     }
 
+    @ViewBuilder
+    private func suggestionIconView(for item: CommandSuggestion, isSelected: Bool) -> some View {
+        if let fav = item.favicon {
+            ZStack {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                        .fill(Color.white)
+                        .frame(width: 20, height: 20)
+                }
+                Image(nsImage: fav)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: isSelected ? 14 : 15, height: isSelected ? 14 : 15)
+            }
+            .frame(width: 20, height: 20)
+        } else if item.isActionRow {
+            ZStack {
+                RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                    .fill(Color.white.opacity(isSelected ? 0.22 : 0.08))
+                    .frame(width: 20, height: 20)
+                Image(systemName: item.icon)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isSelected ? .white : .white.opacity(0.65))
+            }
+            .frame(width: 20, height: 20)
+        } else {
+            ZStack {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                        .fill(Color.white)
+                        .frame(width: 20, height: 20)
+                }
+                Image(systemName: item.icon)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(isSelected ? selectionBarColor : .white.opacity(0.60))
+            }
+            .frame(width: 20, height: 20)
+        }
+    }
+
     private func executeSelectedOrSubmit() {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if suggestions.indices.contains(selectedIndex) {
             suggestions[selectedIndex].action()
+        } else if !trimmed.isEmpty {
+            browserState.handleCommandBarInput(trimmed, openInNewTab: !openInCurrentTab)
         } else {
-            browserState.handleCommandBarInput(query, openInNewTab: !openInCurrentTab)
+            browserState.isCommandBarPresented = false
         }
     }
 }

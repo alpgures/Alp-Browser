@@ -11,6 +11,7 @@ import AppKit
 
 public struct SettingsView: View {
     @EnvironmentObject var browserState: BrowserState
+    @ObservedObject private var extensionManager = AlpExtensionManager.shared
     @Environment(\.dismiss) var dismiss
 
     @State private var selectedTab: SettingsTab = .general
@@ -29,7 +30,7 @@ public struct SettingsView: View {
             case .general: return "app.badge"
             case .appearance: return "paintpalette"
             case .extensions: return "puzzlepiece.extension"
-            case .sync: return "arrow.triangle.2.circlepath"
+            case .sync: return "icloud.and.arrow.up"
             case .privacy: return "shield.lefthalf.filled"
             }
         }
@@ -39,39 +40,45 @@ public struct SettingsView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // macOS style toolbar row
-            HStack(spacing: 8) {
+            // Top Toolbar Row — all 5 tabs + Done button fit cleanly with room to spare
+            HStack(spacing: 4) {
                 ForEach(SettingsTab.allCases) { tab in
+                    let isSelected = (selectedTab == tab)
                     Button {
-                        selectedTab = tab
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            selectedTab = tab
+                        }
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 5) {
                             Image(systemName: tab.icon)
+                                .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
                             Text(tab.rawValue)
                                 .lineLimit(1)
+                                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                         }
                         .fixedSize(horizontal: true, vertical: false)
-                        .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(
-                            selectedTab == tab ? Color.accentColor.opacity(0.18) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            isSelected ? Color.accentColor.opacity(0.20) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                         )
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
 
-                Spacer()
+                Spacer(minLength: 12)
 
                 Button("Done") {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 11)
             .background(.regularMaterial)
 
             Divider()
@@ -91,25 +98,29 @@ public struct SettingsView: View {
                         privacyTab
                     }
                 }
-                .padding(24)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 20)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(minWidth: 650, maxWidth: 740, minHeight: 500, maxHeight: 680)
+        .frame(width: 720, height: 590)
     }
 
     // MARK: - 1. General & App Icons Tab
 
     private var generalAndIconsTab: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("App Icon")
-                .font(.system(size: 14, weight: .bold))
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("App Icon")
+                    .font(.system(size: 14, weight: .bold))
 
-            Text("Choose an official icon or create your own with the custom studio. Single-click applies instantly to Dock and Finder.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                Text("Choose an official icon or create your own with the custom studio. Single-click applies instantly to Dock and Finder.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
 
-            // 3 App Icon Cards
-            HStack(spacing: 16) {
+            // 3 App Icon Cards — stretch equally across the full horizontal width
+            HStack(spacing: 14) {
                 // Original Dark Icon: "Après-ski"
                 IconChoiceCard(
                     title: "Après-ski",
@@ -141,11 +152,12 @@ public struct SettingsView: View {
                     browserState.selectAppIcon(named: "custom")
                 }
             }
+            .frame(maxWidth: .infinity)
 
-            // Custom Icon Studio Box
+            // Custom Icon Studio Box (Full width)
             customIconStudioBox
 
-            Divider().padding(.vertical, 4)
+            Divider().padding(.vertical, 2)
 
             Text("Tab & Memory Management")
                 .font(.system(size: 14, weight: .bold))
@@ -160,7 +172,7 @@ public struct SettingsView: View {
                     Text("24 Hours").tag(24.0)
                     Text("3 Days").tag(72.0)
                 }
-                .frame(width: 130)
+                .frame(width: 140)
                 .onChange(of: browserState.autoArchiveHours) { _, _ in browserState.scheduleSave() }
             }
 
@@ -174,7 +186,7 @@ public struct SettingsView: View {
                     Text("15 Minutes").tag(15.0)
                     Text("Never").tag(0.0)
                 }
-                .frame(width: 130)
+                .frame(width: 140)
                 .onChange(of: browserState.autoHibernateMinutes) { _, _ in browserState.scheduleSave() }
             }
         }
@@ -210,58 +222,57 @@ public struct SettingsView: View {
                 }
             }
 
-            // Presets
+            // Presets Row (expands evenly across full width)
             VStack(alignment: .leading, spacing: 6) {
                 Text("Presets")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(AlpIconGenerator.presets) { preset in
-                            Button {
-                                var config = browserState.customIconConfig
-                                config.startColorHex = preset.startHex
-                                config.endColorHex = preset.endHex
-                                config.bgMode = preset.bgMode
-                                config.grain = preset.grain
-                                config.customImagePath = nil
-                                browserState.updateCustomIconConfig(config)
-                                browserState.selectAppIcon(named: "custom")
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Circle()
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [
-                                                    RGBAColor(hex: preset.startHex)?.swiftUIColor ?? .orange,
-                                                    RGBAColor(hex: preset.endHex)?.swiftUIColor ?? .purple
-                                                ],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
+                HStack(spacing: 8) {
+                    ForEach(AlpIconGenerator.presets) { preset in
+                        Button {
+                            var config = browserState.customIconConfig
+                            config.startColorHex = preset.startHex
+                            config.endColorHex = preset.endHex
+                            config.bgMode = preset.bgMode
+                            config.grain = preset.grain
+                            config.customImagePath = nil
+                            browserState.updateCustomIconConfig(config)
+                            browserState.selectAppIcon(named: "custom")
+                        } label: {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                RGBAColor(hex: preset.startHex)?.swiftUIColor ?? .orange,
+                                                RGBAColor(hex: preset.endHex)?.swiftUIColor ?? .purple
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
                                         )
-                                        .frame(width: 12, height: 12)
-                                    Text(preset.name)
-                                        .font(.system(size: 11, weight: .medium))
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color.secondary.opacity(0.12))
-                                )
+                                    )
+                                    .frame(width: 12, height: 12)
+                                Text(preset.name)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .lineLimit(1)
                             }
-                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color.secondary.opacity(0.12))
+                            )
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
 
             Divider()
 
-            // Controls
-            VStack(spacing: 10) {
+            // Controls (full width)
+            VStack(spacing: 11) {
                 // Gradient Pickers
                 HStack {
                     Text("Logo Gradient:")
@@ -297,7 +308,7 @@ public struct SettingsView: View {
                         Text("Custom Color").tag(2)
                     }
                     .pickerStyle(.segmented)
-                    .frame(width: 230)
+                    .frame(width: 260)
 
                     if browserState.customIconConfig.bgMode == 2 {
                         ColorPicker("Background Color", selection: bgColorBinding)
@@ -307,21 +318,19 @@ public struct SettingsView: View {
                     Spacer()
                 }
 
-                // Grain Slider
-                HStack {
+                // Grain Slider (stretches across remaining width)
+                HStack(spacing: 12) {
                     Text("Texture Grain:")
                         .font(.system(size: 12))
                         .frame(width: 120, alignment: .leading)
 
                     Slider(value: grainBinding, in: 0.0...1.0)
-                        .frame(width: 200)
+                        .frame(maxWidth: .infinity)
 
                     Text(String(format: "%.0f%%", browserState.customIconConfig.grain * 100))
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(.secondary)
-                        .frame(width: 40, alignment: .leading)
-
-                    Spacer()
+                        .frame(width: 38, alignment: .trailing)
                 }
 
                 // Custom Graphic / File Upload
@@ -335,7 +344,7 @@ public struct SettingsView: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "photo.badge.plus")
-                            Text(browserState.customIconConfig.customImagePath != nil ? "Replace File..." : "Choose Image File...")
+                            Text(browserState.customIconConfig.customImagePath != nil ? "Replace Image..." : "Choose Image File...")
                         }
                     }
                     .controlSize(.small)
@@ -346,7 +355,7 @@ public struct SettingsView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                            .frame(maxWidth: 140)
+                            .frame(maxWidth: 180)
 
                         Button("Reset to Mountain") {
                             browserState.resetCustomIconToMountain()
@@ -358,13 +367,14 @@ public struct SettingsView: View {
                 }
             }
         }
-        .padding(14)
+        .padding(16)
+        .frame(maxWidth: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.secondary.opacity(0.06))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.secondary.opacity(0.15), lineWidth: 0.8)
         )
     }
@@ -466,115 +476,121 @@ public struct SettingsView: View {
         }
     }
 
-    // MARK: - 2. Appearance Tab (Arc-Style Space Theme Studio)
+    // MARK: - 2. Appearance Tab (Arc Space Style Editor)
 
     private var appearanceTab: some View {
         SpaceThemeStudioView()
     }
 
-    // MARK: - 3. Vault Sync Tab
+    // MARK: - 3. Vault Sync Tab (Clean Consumer Experience — Zero Endpoint Plumbing)
 
     private var syncTab: some View {
         VStack(alignment: .leading, spacing: 18) {
-            // Security Guarantee Banner
-            HStack(spacing: 12) {
-                Image(systemName: "lock.shield.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Color.green)
+            // Security Guarantee Card
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.green.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(Color.green)
+                }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Zero-Knowledge Encrypted Vault Sync")
-                        .font(.system(size: 13, weight: .bold))
-                    Text("All tabs, spaces, notes, and styles are encrypted on your Mac with AES-256-GCM before transmission. Zero browsing history or passwords leave this device.")
-                        .font(.system(size: 11.5))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("End-to-End Encrypted Vault")
+                        .font(.system(size: 14, weight: .bold))
+                    Text("Your spaces, pinned tabs, folders, easels, notes, and boosts are sealed on this Mac with AES-256-GCM authenticated encryption. Zero browsing history or unencrypted data ever leaves your device.")
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(12)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Sync Endpoint URL:")
-                        .font(.system(size: 12))
+            // Sync Status & Automatic Toggle Card
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 9, height: 9)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cleanSyncHeadline)
+                            .font(.system(size: 13, weight: .semibold))
+
+                        if let lastSync = browserState.syncConfig.lastSyncedAt {
+                            Text("Last updated \(lastSync.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("All spaces and tabs are protected in your encrypted vault")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
                     Spacer()
-                    TextField("http://127.0.0.1:8788", text: $browserState.syncConfig.syncEndpointURL)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 260)
-                        .onChange(of: browserState.syncConfig.syncEndpointURL) { _, _ in browserState.scheduleSave() }
+
+                    Text("AES-256-GCM")
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
                 }
 
-                HStack {
-                    Text("Vault ID:")
-                        .font(.system(size: 12))
-                    Spacer()
-                    TextField("primary", text: $browserState.syncConfig.syncVaultID)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 260)
-                        .onChange(of: browserState.syncConfig.syncVaultID) { _, _ in browserState.scheduleSave() }
-                }
+                Divider()
 
-                Toggle("Automatically sync changes in background", isOn: $browserState.syncConfig.autoSyncEnabled)
-                    .font(.system(size: 12))
+                Toggle("Automatically back up changes in the background", isOn: $browserState.syncConfig.autoSyncEnabled)
+                    .font(.system(size: 12.5))
                     .onChange(of: browserState.syncConfig.autoSyncEnabled) { _, _ in browserState.scheduleSave() }
             }
-
-            Divider()
-
-            // Status Card
-            HStack(spacing: 12) {
-                Circle()
-                    .fill(browserState.isSyncConnected ? Color.green : Color.orange)
-                    .frame(width: 10, height: 10)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Connection Status: \(browserState.syncStatusText)")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(browserState.isSyncConnected ? Color.primary : Color.orange)
-
-                    if let lastSync = browserState.syncConfig.lastSyncedAt {
-                        Text("Last Synced: \(lastSync.formatted(date: .abbreviated, time: .standard))")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-            }
-            .padding(10)
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.12), lineWidth: 0.8)
+            )
 
             // Action Buttons
             HStack(spacing: 12) {
-                Button("Sync Vault Now") {
+                Button {
                     Task {
                         await browserState.syncNow()
                     }
+                } label: {
+                    Label("Sync Vault Now", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
 
-                Button("Restore from Cloud") {
+                Button {
                     Task {
                         await browserState.restoreVaultFromCloud()
                     }
+                } label: {
+                    Label("Restore from Backup", systemImage: "arrow.down.doc")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
 
                 Spacer()
-
-                Button("Test Daemon") {
-                    Task {
-                        await browserState.refreshSyncStatus()
-                    }
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
             }
-            .padding(.top, 4)
         }
+    }
+
+    private var cleanSyncHeadline: String {
+        let raw = browserState.syncStatusText
+        if raw.lowercased().contains("syncing") {
+            return "Syncing Encrypted Vault…"
+        }
+        if raw.lowercased().contains("restoring") {
+            return "Restoring Encrypted Vault…"
+        }
+        return "Encrypted Vault Active"
     }
 
     // MARK: - 4. Privacy & Shields Tab
@@ -594,21 +610,21 @@ public struct SettingsView: View {
 
             Divider().padding(.vertical, 4)
 
-            Text("Data Import & Local Profile")
+            Text("Transition from Arc Browser")
                 .font(.system(size: 14, weight: .bold))
 
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Import Spaces & Pinned Tabs from Arc")
+                    Text("Import Spaces, Pinned Tabs, Themes & Extensions from Arc")
                         .font(.system(size: 12.5, weight: .medium))
-                    Text("Reads your local StorableSidebar.json into Alp Browser without cloud dependency.")
+                    Text("Imports your local StorableSidebar.json and installed extensions directly from Arc.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
-                Button("Import Now") {
+                Button("Import from Arc") {
                     browserState.importFromInstalledArcBrowser()
                 }
                 .buttonStyle(.bordered)
@@ -617,15 +633,15 @@ public struct SettingsView: View {
         }
     }
 
-    // MARK: - 5. Web Extensions Tab
+    // MARK: - 5. Web Extensions Tab (With Automatic Arc Extension Import)
 
     private var extensionsTab: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Web Extensions")
+                    Text("Extensions")
                         .font(.system(size: 15, weight: .bold))
-                    Text("Load unpacked Safari and Chrome Manifest V3 extensions into Alp Browser.")
+                    Text("Extensions imported from Arc Browser and custom unpacked extensions.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -633,17 +649,26 @@ public struct SettingsView: View {
                 Spacer()
 
                 Button {
+                    let count = extensionManager.importExtensionsFromArc(silent: false)
+                    browserState.showToast(count > 0 ? "Imported \(count) new extensions from Arc" : "All \(extensionManager.installedExtensions.count) Arc extensions up to date")
+                } label: {
+                    Label("Import from Arc", systemImage: "arrow.down.circle")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+
+                Button {
                     Task {
-                        await AlpExtensionManager.shared.installExtensionFromOpenPanel()
+                        await extensionManager.installExtensionFromOpenPanel()
                     }
                 } label: {
-                    Label("Install Extension...", systemImage: "plus")
+                    Label("Load Unpacked…", systemImage: "plus")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(.borderedProminent)
             }
 
-            if let errorMsg = AlpExtensionManager.shared.lastErrorMessage {
+            if let errorMsg = extensionManager.lastErrorMessage {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -651,7 +676,7 @@ public struct SettingsView: View {
                         .font(.system(size: 12))
                     Spacer()
                     Button("Dismiss") {
-                        AlpExtensionManager.shared.lastErrorMessage = nil
+                        extensionManager.lastErrorMessage = nil
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 11))
@@ -660,43 +685,57 @@ public struct SettingsView: View {
                 .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
             }
 
-            if AlpExtensionManager.shared.installedExtensions.isEmpty {
+            if extensionManager.installedExtensions.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "puzzlepiece.extension")
                         .font(.system(size: 36))
                         .foregroundStyle(.secondary.opacity(0.6))
                     Text("No Extensions Installed")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("Click 'Install Extension...' to load any unpacked directory containing a manifest.json.")
+                    Text("Click 'Import from Arc' to bring over your Arc extensions or 'Load Unpacked…' to select a folder containing a manifest.json.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                        .frame(maxWidth: 380)
+                        .frame(maxWidth: 400)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
             } else {
-                VStack(spacing: 10) {
-                    ForEach(AlpExtensionManager.shared.installedExtensions) { ext in
+                VStack(spacing: 8) {
+                    ForEach(extensionManager.installedExtensions) { ext in
                         HStack(spacing: 12) {
-                            Image(systemName: "puzzlepiece.extension.fill")
-                                .font(.system(size: 20))
-                                .foregroundStyle(ext.isEnabled ? Color.accentColor : Color.secondary)
-                                .frame(width: 32, height: 32)
+                            Group {
+                                if let nsImg = ext.iconImage {
+                                    Image(nsImage: nsImg)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 28, height: 28)
+                                } else {
+                                    Image(systemName: "puzzlepiece.extension.fill")
+                                        .font(.system(size: 20))
+                                        .foregroundStyle(ext.isEnabled ? Color.accentColor : Color.secondary)
+                                        .frame(width: 28, height: 28)
+                                }
+                            }
+                            .frame(width: 34, height: 34)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color.secondary.opacity(0.10))
+                            )
 
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
                                     Text(ext.name)
                                         .font(.system(size: 13, weight: .semibold))
                                     Text("v\(ext.version)")
-                                        .font(.system(size: 10.5))
+                                        .font(.system(size: 10.5, design: .monospaced))
                                         .foregroundStyle(.secondary)
                                 }
                                 if !ext.description.isEmpty {
                                     Text(ext.description)
                                         .font(.system(size: 11.5))
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(2)
+                                        .lineLimit(1)
                                 }
                             }
 
@@ -706,7 +745,7 @@ public struct SettingsView: View {
                                 get: { ext.isEnabled },
                                 set: { _ in
                                     Task {
-                                        await AlpExtensionManager.shared.toggleExtension(id: ext.id)
+                                        await extensionManager.toggleExtension(id: ext.id)
                                     }
                                 }
                             ))
@@ -715,7 +754,7 @@ public struct SettingsView: View {
 
                             Button {
                                 Task {
-                                    await AlpExtensionManager.shared.removeExtension(id: ext.id)
+                                    await extensionManager.removeExtension(id: ext.id)
                                 }
                             } label: {
                                 Image(systemName: "trash")
@@ -725,8 +764,12 @@ public struct SettingsView: View {
                             .buttonStyle(.plain)
                             .help("Remove Extension")
                         }
-                        .padding(12)
-                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(Color.secondary.opacity(0.06))
+                        )
                     }
                 }
             }
@@ -750,12 +793,12 @@ struct IconChoiceCard: View {
                 Image(nsImage: iconImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: 58, height: 58)
-                    .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
+                    .frame(width: 62, height: 62)
+                    .shadow(color: .black.opacity(0.22), radius: 6, y: 3)
 
                 VStack(spacing: 2) {
                     Text(title)
-                        .font(.system(size: 12.5, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(.primary)
                     Text(subtitle)
                         .font(.system(size: 11))
@@ -765,7 +808,7 @@ struct IconChoiceCard: View {
                 if isSelected {
                     HStack(spacing: 4) {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 10))
+                            .font(.system(size: 10.5))
                         Text("Active")
                             .font(.system(size: 11, weight: .semibold))
                     }
@@ -776,16 +819,18 @@ struct IconChoiceCard: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.vertical, 14)
-            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .padding(.horizontal, 14)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? Color.accentColor.opacity(0.12) : (isHovered ? Color.secondary.opacity(0.1) : Color.secondary.opacity(0.05)))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected ? Color.accentColor.opacity(0.14) : (isHovered ? Color.secondary.opacity(0.10) : Color.secondary.opacity(0.05)))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.14), lineWidth: isSelected ? 1.6 : 0.8)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }

@@ -208,7 +208,65 @@ public struct MainBrowserWindow: View {
         let visibleIDs = browserState.visibleViewportTabIDs
         let tabs = visibleIDs.compactMap { browserState.findTab(id: $0) }
 
-        if tabs.count > 1 {
+        if tabs.count == 2 {
+            GeometryReader { geo in
+                if browserState.activeSpace.splitOrientation == .horizontal {
+                    let dividerWidth: CGFloat = 8
+                    let availableWidth = max(200, geo.size.width - dividerWidth)
+                    let leftWidth = max(180, min(availableWidth - 180, availableWidth * browserState.splitRatio))
+                    let rightWidth = availableWidth - leftWidth
+
+                    HStack(spacing: 0) {
+                        ViewportPaneView(
+                            tab: tabs[0],
+                            isSplitMode: true,
+                            isFocusedPane: browserState.activeTabID == tabs[0].id
+                        )
+                        .frame(width: leftWidth)
+
+                        SplitDividerView(isHorizontal: true) { delta in
+                            let newLeft = leftWidth + delta
+                            let newRatio = max(0.2, min(0.8, newLeft / availableWidth))
+                            browserState.splitRatio = newRatio
+                        }
+
+                        ViewportPaneView(
+                            tab: tabs[1],
+                            isSplitMode: true,
+                            isFocusedPane: browserState.activeTabID == tabs[1].id
+                        )
+                        .frame(width: rightWidth)
+                    }
+                } else {
+                    let dividerHeight: CGFloat = 8
+                    let availableHeight = max(200, geo.size.height - dividerHeight)
+                    let topHeight = max(140, min(availableHeight - 140, availableHeight * browserState.splitRatio))
+                    let bottomHeight = availableHeight - topHeight
+
+                    VStack(spacing: 0) {
+                        ViewportPaneView(
+                            tab: tabs[0],
+                            isSplitMode: true,
+                            isFocusedPane: browserState.activeTabID == tabs[0].id
+                        )
+                        .frame(height: topHeight)
+
+                        SplitDividerView(isHorizontal: false) { delta in
+                            let newTop = topHeight + delta
+                            let newRatio = max(0.2, min(0.8, newTop / availableHeight))
+                            browserState.splitRatio = newRatio
+                        }
+
+                        ViewportPaneView(
+                            tab: tabs[1],
+                            isSplitMode: true,
+                            isFocusedPane: browserState.activeTabID == tabs[1].id
+                        )
+                        .frame(height: bottomHeight)
+                    }
+                }
+            }
+        } else if tabs.count > 2 {
             if browserState.activeSpace.splitOrientation == .horizontal {
                 HStack(spacing: 6) {
                     ForEach(tabs) { tab in
@@ -239,6 +297,62 @@ public struct MainBrowserWindow: View {
         } else {
             Color.clear
         }
+    }
+}
+
+// MARK: - Split View Drag Divider
+
+struct SplitDividerView: View {
+    let isHorizontal: Bool
+    let onDrag: (CGFloat) -> Void
+
+    @State private var isHovered = false
+    @State private var isDragging = false
+    @State private var dragStartOffset: CGFloat = 0
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: isHorizontal ? 8 : nil, height: isHorizontal ? nil : 8)
+                .contentShape(Rectangle())
+
+            if isHovered || isDragging {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.white.opacity(0.40))
+                    .frame(width: isHorizontal ? 2 : 36, height: isHorizontal ? 36 : 2)
+            }
+        }
+        .frame(width: isHorizontal ? 8 : nil, height: isHorizontal ? nil : 8)
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering || isDragging {
+                if isHorizontal {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.resizeUpDown.push()
+                }
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    if !isDragging {
+                        isDragging = true
+                        dragStartOffset = 0
+                    }
+                    let current = isHorizontal ? value.translation.width : value.translation.height
+                    let delta = current - dragStartOffset
+                    dragStartOffset = current
+                    onDrag(delta)
+                }
+                .onEnded { _ in
+                    isDragging = false
+                    BrowserState.shared.scheduleSave()
+                }
+        )
     }
 }
 

@@ -30,7 +30,7 @@ clang -dynamiclib \
     -framework AppKit \
     -framework Security \
     -install_name "@executable_path/libArcOCIBridge.dylib" \
-    "${PROJECT_DIR}/Sources/ArcOCIBridge/ArcOCIBridge.m" \
+    "${PROJECT_DIR}/Sources/AlpOCIBridge/AlpOCIBridge.m" \
     -o "${DYLIB_PATH}"
 
 echo "4. Injecting LC_LOAD_DYLIB and patching UI strings ('Arc' -> 'Alp') in Mach-O binary & MainMenu.nib..."
@@ -259,29 +259,22 @@ cp "${PROJECT_DIR}/Icons/alp_browser_original.icns" "${ALP_APP}/Contents/Resourc
 /usr/libexec/PlistBuddy -c "Delete :NSDockTilePlugIn" "${ALP_APP}/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "${ALP_APP}/Contents/Info.plist" 2>/dev/null || true
 rm -rf "${ALP_APP}/Contents/PlugIns/DockTilePlugIn.plugin"
+rm -f "${ALP_APP}/Icon"* 2>/dev/null || true
 
-# Neutralize any AppIcon inside all Assets.car catalogs so CoreUI never falls back to Arc logo
+# Neutralize AppIcon inside main Assets.car so macOS Dock never falls back to Arc logo on quit
 python3 -c "
-import glob
-for car_path in glob.glob('${ALP_APP}/**/*.car', recursive=True):
-    try:
-        with open(car_path, 'r+b') as f:
-            data = f.read()
-            modified = False
-            for old, new in [
-                (b'AppIconOriginal', b'AlpIconOriginal'),
-                (b'AppIconFilled', b'AlpIconFilled'),
-                (b'AppIcon\x00', b'OldIcon\x00'),
-            ]:
-                if old in data:
-                    data = data.replace(old, new)
-                    modified = True
-            if modified:
-                f.seek(0)
-                f.write(data)
-                f.truncate()
-    except Exception:
-        pass
+main_car = '${ALP_APP}/Contents/Resources/Assets.car'
+try:
+    with open(main_car, 'r+b') as f:
+        data = f.read()
+        if b'AppIcon\x00' in data:
+            data = data.replace(b'AppIcon\x00', b'OldIcon\x00')
+            f.seek(0)
+            f.write(data)
+            f.truncate()
+            print('Successfully neutralized AppIcon in main Assets.car')
+except Exception as e:
+    print('Main Assets.car patch note:', e)
 " 2>/dev/null || true
 
 # Replace alert helper icons and eliminate Arc icon from quit/alert confirmation dialogs

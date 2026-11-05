@@ -1008,10 +1008,58 @@ static CGImageRef AlpCreateTransparent1x1CGImage(void) {
     return emptyImg;
 }
 
+static NSImage *AlpGetActiveAppIconImage(void) {
+    NSString *curIcon = [[NSUserDefaults standardUserDefaults] stringForKey:@"alp_selected_icon"] ?: @"apres_ski";
+    if ([curIcon isEqualToString:@"custom"]) {
+        NSString *customPng = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Arc/custom_app_icon.png"];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:customPng]) {
+            NSImage *cImg = [[NSImage alloc] initWithContentsOfFile:customPng];
+            if (cImg) return cImg;
+        }
+    }
+    NSString *fn = [curIcon isEqualToString:@"kumori_nashi"] ? @"alp_browser_white" : @"alp_browser_original";
+    NSString *p = [[NSBundle mainBundle] pathForResource:fn ofType:@"icns"];
+    if (!p || ![[NSFileManager defaultManager] fileExistsAtPath:p]) {
+        p = [@"/Users/alpgures/Documents/antigravity/arc2.0/Icons" stringByAppendingPathComponent:[fn stringByAppendingPathExtension:@"icns"]];
+    }
+    if (p && [[NSFileManager defaultManager] fileExistsAtPath:p]) {
+        NSImage *img = [[NSImage alloc] initWithContentsOfFile:p];
+        if (img) return img;
+    }
+    return [NSApp applicationIconImage];
+}
+
+static CGImageRef AlpGetActiveAppIconCGImage(void) {
+    NSImage *img = AlpGetActiveAppIconImage();
+    if (!img) return NULL;
+    return [img CGImageForProposedRect:NULL context:nil hints:nil];
+}
+
+static BOOL AlpIsIconAssetName(NSString *assetName) {
+    if (!assetName || assetName.length == 0) return NO;
+    NSString *lower = [assetName lowercaseString];
+    return ([lower containsString:@"appicon"] ||
+            [lower containsString:@"arcicon"] ||
+            [lower containsString:@"icon-arc"] ||
+            [lower containsString:@"arcasettings"] ||
+            [lower containsString:@"dialogicon"] ||
+            [lower containsString:@"prompticon"] ||
+            [lower containsString:@"earlybirdsdialogicon"] ||
+            [lower containsString:@"arcfavicon"] ||
+            [lower containsString:@"welcometoarc"] ||
+            [lower containsString:@"diaappicon"]);
+}
+
 @implementation NSObject (AlpCUINamedImageSwizzle)
 
 - (CGImageRef)alp_cuiNamedImage {
     NSString *assetName = [self respondsToSelector:@selector(name)] ? [self name] : nil;
+    if (!assetName && [self respondsToSelector:@selector(renditionName)]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        assetName = (NSString *)[self performSelector:@selector(renditionName)];
+        #pragma clang diagnostic pop
+    }
     if (assetName.length > 0) {
         // 1. Check hot-swappable CustomGraphics directory so any PNG dropped by the user or branding agent overrides Assets.car
         static NSMutableDictionary<NSString *, id> *customCache = nil;
@@ -1044,18 +1092,9 @@ static CGImageRef AlpCreateTransparent1x1CGImage(void) {
         if ([lowerAsset containsString:@"appicon/"] || [lowerAsset containsString:@".iconstack"]) {
             return AlpCreateTransparent1x1CGImage();
         }
-        if ([lowerAsset containsString:@"appicon"] || [lowerAsset containsString:@"arcicon"] || [lowerAsset containsString:@"icon-arc"]) {
-            NSString *curIcon = [[NSUserDefaults standardUserDefaults] stringForKey:@"alp_selected_icon"] ?: @"apres_ski";
-            NSString *fn = [curIcon isEqualToString:@"kumori_nashi"] ? @"alp_browser_white" : @"alp_browser_original";
-            NSString *path = [[AlpSettingsOverlayManager shared] pathForBundledIcon:fn];
-            NSImage *appIcon = [NSApp applicationIconImage];
-            if (!appIcon && path) {
-                appIcon = [[NSImage alloc] initWithContentsOfFile:path];
-            }
-            if (appIcon) {
-                CGImageRef cg = [appIcon CGImageForProposedRect:NULL context:nil hints:nil];
-                if (cg) return cg;
-            }
+        if (AlpIsIconAssetName(assetName)) {
+            CGImageRef cg = AlpGetActiveAppIconCGImage();
+            if (cg) return cg;
         }
 
         // 3. Blank out Arc's proprietary screenshots & stamps until replaced in CustomGraphics/
@@ -1073,21 +1112,20 @@ static CGImageRef AlpCreateTransparent1x1CGImage(void) {
 
 - (CGImageRef)alp_cuiNamedImageCropped {
     NSString *assetName = [self respondsToSelector:@selector(name)] ? [self name] : nil;
+    if (!assetName && [self respondsToSelector:@selector(renditionName)]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        assetName = (NSString *)[self performSelector:@selector(renditionName)];
+        #pragma clang diagnostic pop
+    }
     if (assetName.length > 0) {
         NSString *lowerAsset = [assetName lowercaseString];
         if ([lowerAsset containsString:@"appicon/"] || [lowerAsset containsString:@".iconstack"]) {
             return AlpCreateTransparent1x1CGImage();
         }
-        if ([lowerAsset containsString:@"appicon"] || [lowerAsset containsString:@"arcicon"] || [lowerAsset containsString:@"icon-arc"]) {
-            NSString *curIcon = [[NSUserDefaults standardUserDefaults] stringForKey:@"alp_selected_icon"] ?: @"apres_ski";
-            NSString *fn = [curIcon isEqualToString:@"kumori_nashi"] ? @"alp_browser_white" : @"alp_browser_original";
-            NSString *path = [[AlpSettingsOverlayManager shared] pathForBundledIcon:fn];
-            NSImage *appIcon = [NSApp applicationIconImage];
-            if (!appIcon && path) appIcon = [[NSImage alloc] initWithContentsOfFile:path];
-            if (appIcon) {
-                CGImageRef cg = [appIcon CGImageForProposedRect:NULL context:nil hints:nil];
-                if (cg) return cg;
-            }
+        if (AlpIsIconAssetName(assetName)) {
+            CGImageRef cg = AlpGetActiveAppIconCGImage();
+            if (cg) return cg;
         }
     }
     return [self alp_cuiNamedImageCropped];
@@ -1095,21 +1133,20 @@ static CGImageRef AlpCreateTransparent1x1CGImage(void) {
 
 - (CGImageRef)alp_cuiThemeRenditionUncroppedImage {
     NSString *assetName = [self respondsToSelector:@selector(name)] ? [self name] : nil;
+    if (!assetName && [self respondsToSelector:@selector(internalName)]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        assetName = (NSString *)[self performSelector:@selector(internalName)];
+        #pragma clang diagnostic pop
+    }
     if (assetName.length > 0) {
         NSString *lowerAsset = [assetName lowercaseString];
         if ([lowerAsset containsString:@"appicon/"] || [lowerAsset containsString:@".iconstack"]) {
             return AlpCreateTransparent1x1CGImage();
         }
-        if ([lowerAsset containsString:@"appicon"] || [lowerAsset containsString:@"arcicon"] || [lowerAsset containsString:@"icon-arc"]) {
-            NSString *curIcon = [[NSUserDefaults standardUserDefaults] stringForKey:@"alp_selected_icon"] ?: @"apres_ski";
-            NSString *fn = [curIcon isEqualToString:@"kumori_nashi"] ? @"alp_browser_white" : @"alp_browser_original";
-            NSString *path = [[AlpSettingsOverlayManager shared] pathForBundledIcon:fn];
-            NSImage *appIcon = [NSApp applicationIconImage];
-            if (!appIcon && path) appIcon = [[NSImage alloc] initWithContentsOfFile:path];
-            if (appIcon) {
-                CGImageRef cg = [appIcon CGImageForProposedRect:NULL context:nil hints:nil];
-                if (cg) return cg;
-            }
+        if (AlpIsIconAssetName(assetName)) {
+            CGImageRef cg = AlpGetActiveAppIconCGImage();
+            if (cg) return cg;
         }
     }
     return [self alp_cuiThemeRenditionUncroppedImage];
@@ -1117,21 +1154,20 @@ static CGImageRef AlpCreateTransparent1x1CGImage(void) {
 
 - (CGImageRef)alp_cuiThemeRenditionUnslicedImage {
     NSString *assetName = [self respondsToSelector:@selector(name)] ? [self name] : nil;
+    if (!assetName && [self respondsToSelector:@selector(internalName)]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        assetName = (NSString *)[self performSelector:@selector(internalName)];
+        #pragma clang diagnostic pop
+    }
     if (assetName.length > 0) {
         NSString *lowerAsset = [assetName lowercaseString];
         if ([lowerAsset containsString:@"appicon/"] || [lowerAsset containsString:@".iconstack"]) {
             return AlpCreateTransparent1x1CGImage();
         }
-        if ([lowerAsset containsString:@"appicon"] || [lowerAsset containsString:@"arcicon"] || [lowerAsset containsString:@"icon-arc"]) {
-            NSString *curIcon = [[NSUserDefaults standardUserDefaults] stringForKey:@"alp_selected_icon"] ?: @"apres_ski";
-            NSString *fn = [curIcon isEqualToString:@"kumori_nashi"] ? @"alp_browser_white" : @"alp_browser_original";
-            NSString *path = [[AlpSettingsOverlayManager shared] pathForBundledIcon:fn];
-            NSImage *appIcon = [NSApp applicationIconImage];
-            if (!appIcon && path) appIcon = [[NSImage alloc] initWithContentsOfFile:path];
-            if (appIcon) {
-                CGImageRef cg = [appIcon CGImageForProposedRect:NULL context:nil hints:nil];
-                if (cg) return cg;
-            }
+        if (AlpIsIconAssetName(assetName)) {
+            CGImageRef cg = AlpGetActiveAppIconCGImage();
+            if (cg) return cg;
         }
     }
     return [self alp_cuiThemeRenditionUnslicedImage];
@@ -1381,7 +1417,6 @@ static void AlpDumpViewHierarchy(NSView *v, NSMutableString *out) {
 @interface AlpGradientButton : NSButton
 @property (nonatomic, strong) NSColor *startColor;
 @property (nonatomic, strong) NSColor *endColor;
-@property (nonatomic, copy) NSString *label;
 @end
 
 @implementation AlpGradientButton
@@ -1391,29 +1426,38 @@ static void AlpDumpViewHierarchy(NSView *v, NSMutableString *out) {
     if (self) {
         self.bordered = NO;
         self.wantsLayer = YES;
+        self.focusRingType = NSFocusRingTypeNone;
+        [self setButtonType:NSButtonTypeMomentaryChange];
+        [[self cell] setHighlightsBy:NSNoCellMask];
     }
     return self;
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect r = self.bounds;
-    NSBezierPath *p = [NSBezierPath bezierPathWithRoundedRect:r xRadius:11 yRadius:11];
-    NSGradient *g = [[NSGradient alloc] initWithStartingColor:self.startColor endingColor:self.endColor];
-    [g drawInBezierPath:p angle:0.0];
+    NSBezierPath *p = [NSBezierPath bezierPathWithRoundedRect:r xRadius:6.0 yRadius:6.0];
+    if (self.startColor && self.endColor) {
+        NSGradient *g = [[NSGradient alloc] initWithStartingColor:self.startColor endingColor:self.endColor];
+        [g drawInBezierPath:p angle:0.0];
+    }
 
-    [[NSColor colorWithCalibratedWhite:1.0 alpha:0.25] setStroke];
+    [[NSColor colorWithCalibratedWhite:1.0 alpha:0.3] setStroke];
     p.lineWidth = 1.0;
     [p stroke];
 
-    NSMutableParagraphStyle *ps = [[NSMutableParagraphStyle alloc] init];
-    ps.alignment = NSTextAlignmentCenter;
-    NSDictionary *attrs = @{
-        NSFontAttributeName: [NSFont systemFontOfSize:11.5 weight:NSFontWeightBold],
-        NSForegroundColorAttributeName: [NSColor whiteColor],
-        NSParagraphStyleAttributeName: ps
-    };
-    NSRect textRect = NSMakeRect(0, (r.size.height - 15) / 2.0, r.size.width, 16);
-    [self.label drawInRect:textRect withAttributes:attrs];
+    NSString *t = self.title ?: @"";
+    if (t.length > 0) {
+        NSMutableParagraphStyle *ps = [[NSMutableParagraphStyle alloc] init];
+        ps.alignment = NSTextAlignmentCenter;
+        NSDictionary *attrs = @{
+            NSFontAttributeName: [NSFont systemFontOfSize:11.5 weight:NSFontWeightSemibold],
+            NSForegroundColorAttributeName: [NSColor whiteColor],
+            NSParagraphStyleAttributeName: ps
+        };
+        CGFloat textH = 15.0;
+        NSRect textRect = NSMakeRect(0, (r.size.height - textH) / 2.0 - 0.5, r.size.width, textH);
+        [t drawInRect:textRect withAttributes:attrs];
+    }
 }
 
 @end
@@ -1536,7 +1580,10 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
     NSString *origPath = [self pathForBundledIcon:@"alp_browser_original"];
     if (origPath) {
         NSImage *img = [[NSImage alloc] initWithContentsOfFile:origPath];
-        if (img) [NSApp setApplicationIconImage:img];
+        if (img) {
+            [NSApp setApplicationIconImage:img];
+            [[NSWorkspace sharedWorkspace] setIcon:img forFile:[[NSBundle mainBundle] bundlePath] options:0];
+        }
 
         NSString *dest = [[NSBundle mainBundle] pathForResource:@"AppIcon" ofType:@"icns"];
         if (dest) {
@@ -1555,7 +1602,10 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
     NSString *whitePath = [self pathForBundledIcon:@"alp_browser_white"];
     if (whitePath) {
         NSImage *img = [[NSImage alloc] initWithContentsOfFile:whitePath];
-        if (img) [NSApp setApplicationIconImage:img];
+        if (img) {
+            [NSApp setApplicationIconImage:img];
+            [[NSWorkspace sharedWorkspace] setIcon:img forFile:[[NSBundle mainBundle] bundlePath] options:0];
+        }
 
         NSString *dest = [[NSBundle mainBundle] pathForResource:@"AppIcon" ofType:@"icns"];
         if (dest) {
@@ -1591,8 +1641,16 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
             self.customPreviewImageView.image = preview;
         }
 
-        // Apply immediately to running Dock icon
+        // Apply immediately to running Dock icon and bundle icon
         [NSApp setApplicationIconImage:preview];
+        [[NSWorkspace sharedWorkspace] setIcon:preview forFile:[[NSBundle mainBundle] bundlePath] options:0];
+
+        // Persist custom PNG for restart restoration
+        NSString *appSupport = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Arc"];
+        NSString *customPng = [appSupport stringByAppendingPathComponent:@"custom_app_icon.png"];
+        NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithCGImage:cg];
+        NSData *pngData = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+        [pngData writeToFile:customPng atomically:YES];
 
         // Export silently to AppIcon.icns in bundle resources
         NSString *dest = [[NSBundle mainBundle] pathForResource:@"AppIcon" ofType:@"icns"];
@@ -1710,8 +1768,13 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
     self.btnApres.bezelStyle = NSBezelStyleRounded;
     [self.cardApres.contentView addSubview:self.btnApres];
 
-    NSClickGestureRecognizer *clickApres = [[NSClickGestureRecognizer alloc] initWithTarget:self action:@selector(selectApresSki:)];
-    [self.cardApres addGestureRecognizer:clickApres];
+    // Invisible full-card overlay button so clicking ANYWHERE instantly selects the card
+    NSButton *overlayApres = [[NSButton alloc] initWithFrame:self.cardApres.bounds];
+    overlayApres.transparent = YES;
+    overlayApres.target = self;
+    overlayApres.action = @selector(selectApresSki:);
+    overlayApres.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [self.cardApres.contentView addSubview:overlayApres positioned:NSWindowAbove relativeTo:nil];
     [root addSubview:self.cardApres];
 
     // --- Card 2: Kumori-nashi ---
@@ -1734,8 +1797,13 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
     self.btnKumori.bezelStyle = NSBezelStyleRounded;
     [self.cardKumori.contentView addSubview:self.btnKumori];
 
-    NSClickGestureRecognizer *clickKumori = [[NSClickGestureRecognizer alloc] initWithTarget:self action:@selector(selectKumoriNashi:)];
-    [self.cardKumori addGestureRecognizer:clickKumori];
+    // Invisible full-card overlay button so clicking ANYWHERE instantly selects the card
+    NSButton *overlayKumori = [[NSButton alloc] initWithFrame:self.cardKumori.bounds];
+    overlayKumori.transparent = YES;
+    overlayKumori.target = self;
+    overlayKumori.action = @selector(selectKumoriNashi:);
+    overlayKumori.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [self.cardKumori.contentView addSubview:overlayKumori positioned:NSWindowAbove relativeTo:nil];
     [root addSubview:self.cardKumori];
 
     // --- Card 3: Custom ---
@@ -1757,8 +1825,13 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
     self.btnCustom.bezelStyle = NSBezelStyleRounded;
     [self.cardCustom.contentView addSubview:self.btnCustom];
 
-    NSClickGestureRecognizer *clickCustom = [[NSClickGestureRecognizer alloc] initWithTarget:self action:@selector(selectCustom:)];
-    [self.cardCustom addGestureRecognizer:clickCustom];
+    // Invisible full-card overlay button so clicking ANYWHERE instantly selects the card
+    NSButton *overlayCustom = [[NSButton alloc] initWithFrame:self.cardCustom.bounds];
+    overlayCustom.transparent = YES;
+    overlayCustom.target = self;
+    overlayCustom.action = @selector(selectCustom:);
+    overlayCustom.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [self.cardCustom.contentView addSubview:overlayCustom positioned:NSWindowAbove relativeTo:nil];
     [root addSubview:self.cardCustom];
 
     // --- Bottom Section: Custom Logo Studio ---
@@ -1832,7 +1905,7 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
     AlpGradientButton *pSunset = [[AlpGradientButton alloc] initWithFrame:NSMakeRect(236, 73, 64, 22)];
     pSunset.startColor = [NSColor colorWithCalibratedRed:0.98 green:0.38 blue:0.22 alpha:1.0];
     pSunset.endColor = [NSColor colorWithCalibratedRed:0.82 green:0.10 blue:0.88 alpha:1.0];
-    pSunset.label = @"Sunset";
+    pSunset.title = @"Sunset";
     pSunset.target = self;
     pSunset.action = @selector(presetSunsetAction:);
     [studioBox.contentView addSubview:pSunset];
@@ -1840,7 +1913,7 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
     AlpGradientButton *pOcean = [[AlpGradientButton alloc] initWithFrame:NSMakeRect(308, 73, 64, 22)];
     pOcean.startColor = [NSColor colorWithCalibratedRed:0.10 green:0.82 blue:0.85 alpha:1.0];
     pOcean.endColor = [NSColor colorWithCalibratedRed:0.18 green:0.30 blue:0.95 alpha:1.0];
-    pOcean.label = @"Ocean";
+    pOcean.title = @"Ocean";
     pOcean.target = self;
     pOcean.action = @selector(presetOceanAction:);
     [studioBox.contentView addSubview:pOcean];
@@ -1848,7 +1921,7 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
     AlpGradientButton *pCyber = [[AlpGradientButton alloc] initWithFrame:NSMakeRect(380, 73, 64, 22)];
     pCyber.startColor = [NSColor colorWithCalibratedRed:0.18 green:0.92 blue:0.55 alpha:1.0];
     pCyber.endColor = [NSColor colorWithCalibratedRed:0.15 green:0.65 blue:0.95 alpha:1.0];
-    pCyber.label = @"Aurora";
+    pCyber.title = @"Aurora";
     pCyber.target = self;
     pCyber.action = @selector(presetCyberAction:);
     [studioBox.contentView addSubview:pCyber];
@@ -2002,21 +2075,10 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
 @end
 
 static NSImage *(*orig_NSImage_imageNamed)(id, SEL, NSImageName) = NULL;
-
 static NSImage *alp_NSImage_imageNamed(id self, SEL _cmd, NSImageName name) {
-    if (name) {
-        NSString *sName = [(NSString *)name lowercaseString];
-        if ([sName containsString:@"appicon"] ||
-            [sName containsString:@"arcicon"] ||
-            [sName containsString:@"icon-arc"] ||
-            [sName containsString:@"arcoutlineicon"]) {
-            NSString *curIcon = [[NSUserDefaults standardUserDefaults] stringForKey:@"alp_selected_icon"] ?: @"apres_ski";
-            NSString *fn = [curIcon isEqualToString:@"kumori_nashi"] ? @"alp_browser_white" : @"alp_browser_original";
-            NSString *path = [[AlpSettingsOverlayManager shared] pathForBundledIcon:fn];
-            NSImage *appIcon = [NSApp applicationIconImage];
-            if (!appIcon && path) appIcon = [[NSImage alloc] initWithContentsOfFile:path];
-            if (appIcon) return appIcon;
-        }
+    if (AlpIsIconAssetName((NSString *)name)) {
+        NSImage *appIcon = AlpGetActiveAppIconImage();
+        if (appIcon) return appIcon;
     }
     if (orig_NSImage_imageNamed) {
         return orig_NSImage_imageNamed(self, _cmd, name);
@@ -2024,16 +2086,46 @@ static NSImage *alp_NSImage_imageNamed(id self, SEL _cmd, NSImageName name) {
     return nil;
 }
 
+static NSImage *(*orig_NSImage_imageNamed_inBundle)(id, SEL, NSImageName, NSBundle *) = NULL;
+static NSImage *alp_NSImage_imageNamed_inBundle(id self, SEL _cmd, NSImageName name, NSBundle *bundle) {
+    if (AlpIsIconAssetName((NSString *)name)) {
+        NSImage *appIcon = AlpGetActiveAppIconImage();
+        if (appIcon) return appIcon;
+    }
+    if (orig_NSImage_imageNamed_inBundle) {
+        return orig_NSImage_imageNamed_inBundle(self, _cmd, name, bundle);
+    }
+    return nil;
+}
+
+static NSImage *(*orig_bundle_imageForResource)(id, SEL, NSImageName) = NULL;
+static NSImage *alp_bundle_imageForResource(id self, SEL _cmd, NSImageName name) {
+    if (AlpIsIconAssetName((NSString *)name)) {
+        NSImage *appIcon = AlpGetActiveAppIconImage();
+        if (appIcon) return appIcon;
+    }
+    if (orig_bundle_imageForResource) {
+        return orig_bundle_imageForResource(self, _cmd, name);
+    }
+    return nil;
+}
+
+static void AlpReplaceArcIconInViewHierarchy(NSView *v, NSImage *appIcon);
+
+static void (*orig_dockTile_setContentView)(id, SEL, NSView *) = NULL;
+static void alp_dockTile_setContentView(id self, SEL _cmd, NSView *view) {
+    if (view) {
+        NSImage *appIcon = AlpGetActiveAppIconImage();
+        if (appIcon) AlpReplaceArcIconInViewHierarchy(view, appIcon);
+    }
+    if (orig_dockTile_setContentView) {
+        orig_dockTile_setContentView(self, _cmd, view);
+    }
+}
+
 static void (*orig_setApplicationIconImage)(id, SEL, NSImage *) = NULL;
 static void alp_setApplicationIconImage(id self, SEL _cmd, NSImage *image) {
-    NSString *curIcon = [[NSUserDefaults standardUserDefaults] stringForKey:@"alp_selected_icon"] ?: @"apres_ski";
-    if ([curIcon isEqualToString:@"custom"]) {
-        if (orig_setApplicationIconImage) orig_setApplicationIconImage(self, _cmd, image);
-        return;
-    }
-    NSString *fn = [curIcon isEqualToString:@"kumori_nashi"] ? @"alp_browser_white" : @"alp_browser_original";
-    NSString *path = [[AlpSettingsOverlayManager shared] pathForBundledIcon:fn];
-    NSImage *desired = path ? [[NSImage alloc] initWithContentsOfFile:path] : image;
+    NSImage *desired = AlpGetActiveAppIconImage();
     if (orig_setApplicationIconImage) {
         orig_setApplicationIconImage(self, _cmd, desired ?: image);
     }
@@ -2042,7 +2134,7 @@ static void alp_setApplicationIconImage(id self, SEL _cmd, NSImage *image) {
 static void (*orig_NSAlert_layout)(id, SEL) = NULL;
 static void alp_NSAlert_layout(id self, SEL _cmd) {
     NSAlert *alert = (NSAlert *)self;
-    NSImage *appIcon = [NSApp applicationIconImage];
+    NSImage *appIcon = AlpGetActiveAppIconImage();
     if (appIcon) alert.icon = appIcon;
     if (orig_NSAlert_layout) orig_NSAlert_layout(self, _cmd);
 }
@@ -2050,7 +2142,7 @@ static void alp_NSAlert_layout(id self, SEL _cmd) {
 static NSModalResponse (*orig_NSAlert_runModal)(id, SEL) = NULL;
 static NSModalResponse alp_NSAlert_runModal(id self, SEL _cmd) {
     NSAlert *alert = (NSAlert *)self;
-    NSImage *appIcon = [NSApp applicationIconImage];
+    NSImage *appIcon = AlpGetActiveAppIconImage();
     if (appIcon) alert.icon = appIcon;
     if (orig_NSAlert_runModal) return orig_NSAlert_runModal(self, _cmd);
     return NSModalResponseStop;
@@ -2060,8 +2152,8 @@ static void AlpReplaceArcIconInViewHierarchy(NSView *v, NSImage *appIcon) {
     if (!v || !appIcon) return;
     if ([v isKindOfClass:[NSImageView class]]) {
         NSImageView *iv = (NSImageView *)v;
-        if (iv.image && iv.image != appIcon) {
-            NSSize s = iv.image.size;
+        if (iv.image != appIcon) {
+            NSSize s = iv.image ? iv.image.size : NSZeroSize;
             if (s.width >= 32 && s.height >= 32) {
                 iv.image = appIcon;
             }
@@ -2069,6 +2161,47 @@ static void AlpReplaceArcIconInViewHierarchy(NSView *v, NSImage *appIcon) {
     }
     for (NSView *sub in v.subviews) {
         AlpReplaceArcIconInViewHierarchy(sub, appIcon);
+    }
+}
+
+static void AlpSanitizeQuitWindow(NSWindow *w) {
+    if (!w) return;
+    NSImage *appIcon = AlpGetActiveAppIconImage();
+    CGImageRef appCG = AlpGetActiveAppIconCGImage();
+    if (!appIcon) return;
+
+    void (^checkView)(NSView *) = ^(NSView *v) {
+        if ([v isKindOfClass:[NSImageView class]]) {
+            NSImageView *iv = (NSImageView *)v;
+            if (iv.image != appIcon) {
+                iv.image = appIcon;
+            }
+        }
+        if (v.layer) {
+            void (^checkLayer)(CALayer *) = ^(CALayer *layer) {
+                if (layer.contents && CFGetTypeID((__bridge CFTypeRef)layer.contents) == CGImageGetTypeID()) {
+                    CGImageRef cur = (__bridge CGImageRef)layer.contents;
+                    size_t pw = CGImageGetWidth(cur);
+                    size_t ph = CGImageGetHeight(cur);
+                    if (pw >= 32 && ph >= 32 && labs((long)pw - (long)ph) <= 16 && cur != appCG) {
+                        layer.contents = (__bridge id)appCG;
+                    }
+                }
+            };
+            checkLayer(v.layer);
+            for (CALayer *sub in v.layer.sublayers) {
+                checkLayer(sub);
+            }
+        }
+    };
+
+    NSMutableArray<NSView *> *stack = [NSMutableArray array];
+    if (w.contentView) [stack addObject:w.contentView];
+    while (stack.count > 0) {
+        NSView *curr = stack.lastObject;
+        [stack removeLastObject];
+        checkView(curr);
+        [stack addObjectsFromArray:curr.subviews];
     }
 }
 
@@ -2228,6 +2361,24 @@ static void ArcOCIBridgeInitialize(void) {
         if (mImageNamed) {
             orig_NSImage_imageNamed = (void *)method_getImplementation(mImageNamed);
             method_setImplementation(mImageNamed, (IMP)alp_NSImage_imageNamed);
+        }
+
+        Method mImageNamedInBundle = class_getClassMethod([NSImage class], @selector(imageNamed:inBundle:));
+        if (mImageNamedInBundle) {
+            orig_NSImage_imageNamed_inBundle = (void *)method_getImplementation(mImageNamedInBundle);
+            method_setImplementation(mImageNamedInBundle, (IMP)alp_NSImage_imageNamed_inBundle);
+        }
+
+        Method mBundleImg = class_getInstanceMethod([NSBundle class], @selector(imageForResource:));
+        if (mBundleImg) {
+            orig_bundle_imageForResource = (void *)method_getImplementation(mBundleImg);
+            method_setImplementation(mBundleImg, (IMP)alp_bundle_imageForResource);
+        }
+
+        Method mDockTileSet = class_getInstanceMethod([NSDockTile class], @selector(setContentView:));
+        if (mDockTileSet) {
+            orig_dockTile_setContentView = (void *)method_getImplementation(mDockTileSet);
+            method_setImplementation(mDockTileSet, (IMP)alp_dockTile_setContentView);
         }
 
         Method mAlertLayout = class_getInstanceMethod([NSAlert class], @selector(layout));
@@ -2441,10 +2592,7 @@ static void ArcOCIBridgeInitialize(void) {
 
                     NSString *wTitle = w.title ?: @"";
                     if ([winLog.lowercaseString containsString:@"quit"] || [wTitle.lowercaseString containsString:@"quit"]) {
-                        NSImage *appIcon = [NSApp applicationIconImage];
-                        if (appIcon) {
-                            AlpReplaceArcIconInViewHierarchy(w.contentView, appIcon);
-                        }
+                        AlpSanitizeQuitWindow(w);
                     }
                 }
                 [winLog writeToFile:@"/tmp/alp_windows.txt" atomically:YES encoding:NSUTF8StringEncoding error:nil];

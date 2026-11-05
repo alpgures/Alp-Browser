@@ -396,7 +396,7 @@ struct SidebarSpaceContentView: View {
                 let currentSpace = browserState.activeSpace
 
                 VStack(alignment: .leading, spacing: 3) {
-                    // Pinned Items Section
+                    // Pinned Items Section (Retained Members)
                     if !currentSpace.pinnedNodes.isEmpty {
                         ForEach(currentSpace.pinnedNodes) { node in
                             SidebarNodeRowView(
@@ -406,30 +406,16 @@ struct SidebarSpaceContentView: View {
                                 theme: theme
                             )
                         }
+
+                        // Subtle divider between retained items and temporary tabs
+                        Rectangle()
+                            .fill(theme.secondaryForegroundColor.opacity(0.18))
+                            .frame(height: 1)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
                     }
 
-                    // Section Divider
-                    HStack {
-                        Text("ACTIVE TABS")
-                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                            .foregroundStyle(theme.secondaryForegroundColor)
-                            .tracking(0.6)
-                        Spacer()
-                        Button {
-                            browserState.openNewTab(urlString: "https://www.google.com")
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 9.5, weight: .bold))
-                                .foregroundStyle(theme.secondaryForegroundColor)
-                        }
-                        .buttonStyle(.plain)
-                        .help("New Tab (⌘T)")
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.top, 8)
-                    .padding(.bottom, 2)
-
-                    // Today Tabs
+                    // Temporary (Today) Tabs
                     ForEach(currentSpace.todayTabs) { tab in
                         TabRowItemView(
                             tab: tab,
@@ -441,20 +427,8 @@ struct SidebarSpaceContentView: View {
                         )
                     }
 
-                    if currentSpace.todayTabs.isEmpty && currentSpace.pinnedNodes.isEmpty {
-                        VStack(spacing: 8) {
-                            Text("No open tabs")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(theme.secondaryForegroundColor)
-                            Button("Open Tab") {
-                                browserState.openNewTab(urlString: "https://www.google.com")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 32)
-                    }
+                    // "+ New Tab" row (opens Command Bar in center)
+                    NewTabButtonRow(theme: theme)
                 }
                 .id(currentSpace.id)
                 .transition(
@@ -631,19 +605,22 @@ struct TabRowItemView: View {
             }
 
             // Close / Unload Button:
-            // When currently on a tab (isSelected): shows minus sign ("minus")!
-            // When hovering over an unfocused tab (!isSelected): shows X ("xmark")!
+            // - When on tab (isSelected):
+            //   - Retained member (isPinned): shows minus sign ("minus")!
+            //   - Temporary tab (!isPinned): shows close X ("xmark")!
+            // - When hovering on unfocused tab (!isSelected && isHovered): shows close X ("xmark")!
+            let showMinus = isSelected && isPinned
             if isHovered || isSelected {
                 Button {
                     browserState.handleTabTrailingButtonAction(for: tab)
                 } label: {
-                    Image(systemName: isSelected ? "minus" : "xmark")
-                        .font(.system(size: isSelected ? 10.5 : 9.5, weight: .bold))
+                    Image(systemName: showMinus ? "minus" : "xmark")
+                        .font(.system(size: showMinus ? 10.5 : 9.5, weight: .bold))
                         .foregroundStyle(theme.secondaryForegroundColor)
                         .frame(width: 16, height: 16)
                 }
                 .buttonStyle(.plain)
-                .help(isSelected ? "Unload Tab" : "Close Tab (⌘W)")
+                .help(showMinus ? "Unload Tab" : "Close Tab (⌘W)")
             }
         }
         .padding(.horizontal, 8)

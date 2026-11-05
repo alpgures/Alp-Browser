@@ -502,9 +502,19 @@ public final class BrowserState: ObservableObject {
         navigateTab(id: tabID, to: pinnedURL)
     }
 
-    /// Fixed close action: unfocused pinned tab close removes or archives; Today tab closes immediately.
+    /// Trailing action on tab row:
+    /// - For retained / pinned tabs: hibernates WebView to 0 MB memory snapshot and deselects.
+    /// - For temporary tabs: closes and removes the tab immediately.
     public func handleTabTrailingButtonAction(for tab: TabItem) {
-        closeTab(id: tab.id)
+        if tab.isPinned {
+            WebViewPool.shared.hibernateTab(id: tab.id)
+            if let sIdx = activeSpaceIndex, spaces[sIdx].activeTabID == tab.id {
+                spaces[sIdx].activeTabID = spaces[sIdx].todayTabs.first?.id
+            }
+            scheduleSave()
+        } else {
+            closeTab(id: tab.id)
+        }
     }
 
     public func closeTab(id tabID: UUID) {

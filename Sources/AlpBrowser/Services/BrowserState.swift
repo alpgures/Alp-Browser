@@ -188,6 +188,11 @@ public final class BrowserState: ObservableObject {
         WebViewPool.shared.goForward(in: id)
     }
 
+    public func reloadActiveTab() {
+        guard let id = activeTabID else { return }
+        WebViewPool.shared.reload(in: id)
+    }
+
     // MARK: - Control + Tab Recent Tab Switcher
 
     public var switcherCandidateTabs: [TabItem] {
@@ -525,11 +530,25 @@ public final class BrowserState: ObservableObject {
         navigateTab(id: tabID, to: pinnedURL)
     }
 
+    /// Returns true if a tab belongs to the sidebar's retained members (favorites, top pinned tabs, or pinned folder items).
+    public func isRetainedMember(tabID: UUID) -> Bool {
+        if favorites.contains(where: { $0.id == tabID }) { return true }
+        for space in spaces {
+            if space.pinnedNodes.contains(where: { $0.allTabs.contains(where: { $0.id == tabID }) }) {
+                return true
+            }
+        }
+        if let tab = findTab(id: tabID), tab.isPinned {
+            return true
+        }
+        return false
+    }
+
     /// Trailing action on tab row:
     /// - For retained / pinned tabs: hibernates WebView to 0 MB memory snapshot and deselects.
     /// - For temporary tabs: closes and removes the tab immediately.
     public func handleTabTrailingButtonAction(for tab: TabItem) {
-        if tab.isPinned {
+        if isRetainedMember(tabID: tab.id) {
             Task {
                 await WebViewPool.shared.hibernateTab(id: tab.id)
             }

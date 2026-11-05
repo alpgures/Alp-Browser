@@ -244,16 +244,19 @@ public struct CommandBarView: View {
 
                                     // Action Badge / Switch to Tab Indicator
                                     if item.badge == "Switch to Tab" {
-                                        HStack(spacing: 6) {
+                                        HStack(spacing: 7) {
                                             Text("Switch to Tab")
-                                                .font(.system(size: 11, weight: .medium))
-                                                .foregroundStyle(isSelected ? .white : .white.opacity(0.6))
+                                                .font(.system(size: 11.5, weight: .medium))
+                                                .foregroundStyle(isSelected ? .white : .white.opacity(0.40))
 
                                             Image(systemName: "arrow.right")
                                                 .font(.system(size: 9.5, weight: .bold))
-                                                .foregroundStyle(isSelected ? browserState.activeTheme.primaryColor.swiftUIColor : .white)
-                                                .frame(width: 16, height: 16)
-                                                .background(isSelected ? Color.white : Color.white.opacity(0.14), in: Circle())
+                                                .foregroundStyle(isSelected ? Color(red: 0.17, green: 0.45, blue: 0.52) : .white.opacity(0.60))
+                                                .frame(width: 17, height: 17)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                                        .fill(isSelected ? Color.white : Color.white.opacity(0.10))
+                                                )
                                         }
                                     } else {
                                         Text(item.badge)
@@ -271,7 +274,7 @@ public struct CommandBarView: View {
                                 .padding(.vertical, 8)
                                 .background(
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(isSelected ? browserState.activeTheme.primaryColor.swiftUIColor.opacity(0.85) : Color.clear)
+                                        .fill(isSelected ? Color(red: 0.17, green: 0.45, blue: 0.52) : Color.clear)
                                 )
                                 .contentShape(Rectangle())
                             }
@@ -282,7 +285,7 @@ public struct CommandBarView: View {
                 }
                 .frame(maxHeight: 340)
             }
-            .frame(width: 600)
+            .frame(width: 620)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color(red: 0.10, green: 0.10, blue: 0.13))

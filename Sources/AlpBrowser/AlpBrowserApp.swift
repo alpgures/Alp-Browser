@@ -24,11 +24,6 @@ public struct AlpBrowserApp: App {
                 .background(AlpWindowAccessor())
         }
         .windowStyle(.hiddenTitleBar)
-
-        Settings {
-            SettingsView()
-                .environmentObject(browserState)
-        }
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings...") {
@@ -199,13 +194,18 @@ public struct AlpBrowserApp: App {
                 }
             }
         }
+
+        Settings {
+            SettingsView()
+                .environmentObject(browserState)
+        }
     }
 }
 
 // MARK: - AppKit Window Configurator & AppDelegate
 
 @MainActor
-public final class AlpAppDelegate: NSObject, NSApplicationDelegate {
+public final class AlpAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
 
@@ -228,15 +228,30 @@ public final class AlpAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         // Ensure "Settings..." is explicitly wired in the macOS Alp Browser menu
-        DispatchQueue.main.async { [weak self] in
-            self?.setupApplicationMenu()
+        setupApplicationMenu()
+        NotificationCenter.default.addObserver(
+            forName: NSMenu.didBeginTrackingNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.setupApplicationMenu()
+            }
         }
+    }
+
+    public func menuNeedsUpdate(_ menu: NSMenu) {
+        ensureSettingsItem(in: menu)
     }
 
     private func setupApplicationMenu() {
         guard let mainMenu = NSApp.mainMenu else { return }
         guard let appMenuItem = mainMenu.items.first, let appMenu = appMenuItem.submenu else { return }
+        appMenu.delegate = self
+        ensureSettingsItem(in: appMenu)
+    }
 
+    private func ensureSettingsItem(in appMenu: NSMenu) {
         let hasSettings = appMenu.items.contains { item in
             item.action == #selector(openSettingsAction) || (item.keyEquivalent == "," && item.keyEquivalentModifierMask == .command)
         }

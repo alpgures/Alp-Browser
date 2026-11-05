@@ -36,17 +36,17 @@ public struct SidebarView: View {
                 VStack(spacing: 8) {
                     // 1. Top Navigation Row (Seamless with macOS traffic lights)
                     topNavigationRow
-                        .padding(.top, 12)
-                        .padding(.horizontal, 6)
+                        .padding(.top, 10)
+                        .padding(.horizontal, 8)
 
                     // 2. Command / URL Bar Pill with hover "..." menu
                     urlCommandPill
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, 8)
 
                     // 3. Favorites Grid (2x2 layout for 4 bookmarks)
                     if !browserState.favorites.isEmpty {
                         favoritesGrid
-                            .padding(.horizontal, 6)
+                            .padding(.horizontal, 8)
                             .padding(.top, 2)
                     }
 
@@ -55,18 +55,20 @@ public struct SidebarView: View {
                         renamingTabID: $renamingTabID,
                         renameDraft: $renameDraft
                     )
+                    .padding(.horizontal, 8)
 
                     // 5. Media Mini-Player Card (when background tab is playing audio)
                     if let audioTab = browserState.backgroundAudioPlayingTab {
                         sidebarMediaMiniPlayer(for: audioTab)
-                            .padding(.horizontal, 6)
+                            .padding(.horizontal, 8)
                     }
 
                     // 6. Bottom Space Switcher & Library Bar (Stable during sidebar resizing)
                     bottomSpaceSwitcherBar
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, 8)
                         .padding(.bottom, 10)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .foregroundStyle(theme.foregroundColor)
                 .transition(
                     .asymmetric(
@@ -82,7 +84,7 @@ public struct SidebarView: View {
     // MARK: - 1. Top Navigation Row
 
     private var topNavigationRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             if !browserState.isSidebarCollapsed {
                 // Exact width clearance for macOS window traffic lights (dots)
                 Spacer()
@@ -129,21 +131,20 @@ public struct SidebarView: View {
             .help("Forward (⌘])")
 
             Button {
-                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
-                    browserState.isSiteControlCenterPresented.toggle()
-                }
+                browserState.reloadActiveTab()
             } label: {
-                Image(systemName: "ellipsis")
+                Image(systemName: "arrow.clockwise")
                     .font(.system(size: 11.5, weight: .semibold))
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(AlpIconButtonStyle(theme: theme))
-            .help("Site Options & Controls")
+            .help("Reload Page (⌘R)")
         }
         .frame(height: 26)
+        .frame(maxWidth: .infinity)
     }
 
-    // MARK: - 2. Clean URL Command Pill with Site Controls & Extensions
+    // MARK: - 2. Clean URL Command Pill with Hover "..." Button
 
     private var urlCommandPill: some View {
         HStack(spacing: 6) {
@@ -151,56 +152,55 @@ public struct SidebarView: View {
             Button {
                 browserState.openCommandBar(prefilledWithCurrentURL: true)
             } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
+                    if browserState.activeTab?.isLoading == true {
+                        ProgressView()
+                            .scaleEffect(0.65)
+                            .frame(width: 14, height: 14)
+                    } else if let tab = browserState.activeTab, let fav = FaviconCache.shared.favicon(for: tab.urlString) {
+                        Image(nsImage: fav)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 13, height: 13)
+                    }
+
                     Text(browserState.activeTab?.simplifiedDomain ?? "Search or Enter URL...")
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(theme.foregroundColor.opacity(0.92))
                         .lineLimit(1)
                         .truncationMode(.tail)
+
                     Spacer(minLength: 4)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            // Right side of URL bubble (Exact Arc layout from user screenshot):
-            // 1. Pink Adblock / Privacy Shield
-            Image(systemName: "shield.fill")
-                .font(.system(size: 10.5))
-                .foregroundStyle(Color(red: 0.95, green: 0.35, blue: 0.55))
-
-            // 2. Copy Link Button
-            Button {
-                if let url = browserState.activeTab?.urlString {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url, forType: .string)
-                    browserState.showToast("Copied link to clipboard")
+            // Revealable "..." button when hovered over the website bubble
+            if isHoveringUrlPill {
+                Button {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                        browserState.isSiteControlCenterPresented.toggle()
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(theme.secondaryForegroundColor)
+                        .frame(width: 20, height: 20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(theme.hoverBackground)
+                        )
                 }
-            } label: {
-                Image(systemName: "link")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(theme.secondaryForegroundColor)
-                    .frame(width: 18, height: 18)
+                .buttonStyle(.plain)
+                .help("Site Controls & Options")
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
-            .buttonStyle(.plain)
-            .help("Copy URL")
-
-            // 3. Site Controls / Tune Button (Opens Arc Site Control Center)
-            Button {
-                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
-                    browserState.isSiteControlCenterPresented.toggle()
-                }
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(theme.secondaryForegroundColor)
-                    .frame(width: 18, height: 18)
-            }
-            .buttonStyle(.plain)
-            .help("Site Controls & Extensions")
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
+        .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(theme.pillBackground)
@@ -209,6 +209,8 @@ public struct SidebarView: View {
                         .stroke(theme.pillBorderColor, lineWidth: 0.8)
                 )
         )
+        .contentShape(Rectangle())
+        .onHover { isHoveringUrlPill = $0 }
     }
 
     // MARK: - 3. Favorites Grid (2 Columns -> 2x2 for 4 Bookmarks)
@@ -229,6 +231,7 @@ public struct SidebarView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - 5. Media Mini-Player
@@ -280,7 +283,7 @@ public struct SidebarView: View {
     private var bottomSpaceSwitcherBar: some View {
         HStack(spacing: 4) {
             // Left: Library and Settings
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
                 Button {
                     browserState.isLibrarySheetPresented = true
                 } label: {
@@ -301,7 +304,6 @@ public struct SidebarView: View {
                 .buttonStyle(AlpIconButtonStyle(theme: theme))
                 .help("Settings & App Icons (⌘,)")
             }
-            .fixedSize()
 
             Spacer(minLength: 4)
 
@@ -336,7 +338,6 @@ public struct SidebarView: View {
                     }
                 }
             }
-            .fixedSize()
 
             Spacer(minLength: 4)
 
@@ -368,9 +369,9 @@ public struct SidebarView: View {
                     .frame(width: 26, height: 26)
             }
             .menuStyle(.borderlessButton)
-            .fixedSize()
             .help("Add Space or Note")
         }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -404,6 +405,7 @@ struct SidebarSpaceContentView: View {
                     .padding(.horizontal, 6)
                     .padding(.top, 4)
                     .padding(.bottom, 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     // Pinned Items Section (Retained Members)
                     if !currentSpace.pinnedNodes.isEmpty {
@@ -439,6 +441,7 @@ struct SidebarSpaceContentView: View {
                     // "+ New Tab" row (opens Command Bar in center)
                     NewTabButtonRow(theme: theme)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .id(currentSpace.id)
                 .transition(
                     .asymmetric(
@@ -447,16 +450,18 @@ struct SidebarSpaceContentView: View {
                     )
                 )
             }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
             .offset(x: gestures.sidebarSwipeOffset)
             .animation(.spring(response: 0.30, dampingFraction: 0.85), value: browserState.activeSpaceID)
-            .padding(.horizontal, 2)
         }
+        .frame(maxWidth: .infinity)
     }
 }
 
 // MARK: - Row Views for Tabs and Nodes
 
 struct SidebarNodeRowView: View {
+    @EnvironmentObject var browserState: BrowserState
     let node: SidebarNode
     @Binding var renamingTabID: UUID?
     @Binding var renameDraft: String
@@ -468,7 +473,7 @@ struct SidebarNodeRowView: View {
             TabRowItemView(
                 tab: tab,
                 isPinned: true,
-                isSelected: BrowserState.shared.activeTabID == tab.id,
+                isSelected: browserState.activeTabID == tab.id,
                 renamingTabID: $renamingTabID,
                 renameDraft: $renameDraft,
                 theme: theme
@@ -528,6 +533,7 @@ struct FolderRowItemView: View {
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -544,8 +550,10 @@ struct FolderRowItemView: View {
                         .padding(.leading, 12)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -559,6 +567,10 @@ struct TabRowItemView: View {
     let theme: SpaceTheme
 
     @State private var isHovered = false
+
+    private var isRetained: Bool {
+        isPinned || tab.isPinned || browserState.isRetainedMember(tabID: tab.id)
+    }
 
     var body: some View {
         HStack(spacing: 7) {
@@ -615,13 +627,13 @@ struct TabRowItemView: View {
                     .foregroundStyle(theme.effectiveAccentColor)
             }
 
-            // Close / Unload Button:
-            // - Active retained tab (isSelected && isPinned): shows minus sign ("minus") to unload.
-            // - Temporary tab (!isPinned): shows close X ("xmark") only when hovered.
-            // - Inactive tab (isHovered): shows close X ("xmark").
-            let showMinus = isSelected && isPinned
-            let showTrailingButton = (isSelected && isPinned) || isHovered
-            if showTrailingButton {
+            // Close / Unload Button Behavior:
+            // - Active retained tab (isSelected && isRetained): shows minus sign ("minus") to unload to 0 MB snapshot.
+            // - Temporary tab (!isRetained): shows close X ("xmark") only when hovered.
+            // - Inactive retained tab: shows close X ("xmark") only when hovered.
+            let showMinus = isSelected && isRetained
+            let showCloseX = isHovered && !showMinus
+            if showMinus || showCloseX {
                 Button {
                     browserState.handleTabTrailingButtonAction(for: tab)
                 } label: {
@@ -636,6 +648,7 @@ struct TabRowItemView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
+        .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(isSelected ? theme.selectionBackground : (isHovered ? theme.hoverBackground : Color.clear))
@@ -648,7 +661,7 @@ struct TabRowItemView: View {
             browserState.selectTab(tab.id)
         }
         .contextMenu {
-            Button(tab.isPinned ? "Move to Active Tabs" : "Pin Tab") {
+            Button(isRetained ? "Move to Active Tabs" : "Pin Tab") {
                 browserState.togglePinTab(id: tab.id)
             }
             Button("Rename Tab") {
@@ -681,7 +694,7 @@ struct FavoriteTileView: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(isSelected ? theme.selectionBackground : (isHovered ? theme.hoverBackground : theme.pillBackground.opacity(0.6)))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .stroke(isSelected ? theme.effectiveAccentColor.opacity(0.8) : theme.pillBorderColor, lineWidth: isSelected ? 1.2 : 0.6)
                     )
 
@@ -696,7 +709,8 @@ struct FavoriteTileView: View {
                         .foregroundStyle(theme.foregroundColor)
                 }
             }
-            .frame(height: 44)
+            .frame(maxWidth: .infinity)
+            .frame(height: 42)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -728,6 +742,7 @@ struct NewTabButtonRow: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
+            .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isHovered ? theme.hoverBackground : Color.clear)

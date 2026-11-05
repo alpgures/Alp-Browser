@@ -31,7 +31,6 @@ static NSString *const kHandledPropertyKey = @"com.alpgures.AlpBrowserBridgeHand
 static NSString *const kOCIHostAlias = @"oci-box";
 
 @interface AlpSettingsOverlayManager : NSObject
-@property (nonatomic, strong) NSMapTable<NSWindow *, NSView *> *generalOverlays;
 @property (nonatomic, strong) NSMapTable<NSWindow *, NSView *> *iconOverlays;
 
 // Icon Tab Controls
@@ -196,29 +195,42 @@ static NSMutableDictionary *AlpSanitizeKeychainDict(CFDictionaryRef cfDict) {
 }
 
 static OSStatus alp_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result) {
+    NSDictionary *qDict = (__bridge NSDictionary *)query;
+    NSString *cacheKey = [[AlpKeychainBackingStore shared] cacheKeyFromQuery:qDict];
+
+    // Check local backing store FIRST to completely eliminate Keychain security prompts
+    NSData *savedData = [[AlpKeychainBackingStore shared] dataForKey:cacheKey];
+    if (savedData) {
+        if (result) {
+            BOOL wantsAttributes = [qDict[(__bridge id)kSecReturnAttributes] boolValue] || [qDict[@"r_Attributes"] boolValue];
+            if (wantsAttributes) {
+                NSMutableDictionary *clean = AlpSanitizeKeychainDict(query);
+                clean[(__bridge id)kSecValueData] = savedData;
+                *result = CFBridgingRetain(clean);
+            } else {
+                *result = CFBridgingRetain(savedData);
+            }
+        }
+        return errSecSuccess;
+    }
+
+    if ([cacheKey containsString:@"Safe Storage"] || [cacheKey containsString:@"SafeStorage"] || [cacheKey containsString:@"Arc Safe"]) {
+        // Synthesize and persist a stable 16-byte OSCrypt encryption key locally so macOS Keychain is NEVER prompted
+        const char *defaultSecret = "alp_safe_storage_secret_key_v1";
+        NSData *secData = [NSData dataWithBytes:defaultSecret length:strlen(defaultSecret)];
+        [[AlpKeychainBackingStore shared] setData:secData forKey:cacheKey];
+        if (result) {
+            *result = CFBridgingRetain(secData);
+        }
+        return errSecSuccess;
+    }
+
     NSMutableDictionary *clean = AlpSanitizeKeychainDict(query);
     if (orig_SecItemCopyMatching) {
         OSStatus status = orig_SecItemCopyMatching((__bridge CFDictionaryRef)clean, result);
         if (status == errSecSuccess) {
             return errSecSuccess;
         }
-    }
-
-    NSDictionary *qDict = (__bridge NSDictionary *)query;
-    NSString *cacheKey = [[AlpKeychainBackingStore shared] cacheKeyFromQuery:qDict];
-    NSData *savedData = [[AlpKeychainBackingStore shared] dataForKey:cacheKey];
-    if (savedData) {
-        if (result) {
-            BOOL wantsAttributes = [qDict[(__bridge id)kSecReturnAttributes] boolValue] || [qDict[@"r_Attributes"] boolValue];
-            if (wantsAttributes) {
-                NSMutableDictionary *attrResult = [clean mutableCopy];
-                attrResult[(__bridge id)kSecValueData] = savedData;
-                *result = CFBridgingRetain(attrResult);
-            } else {
-                *result = CFBridgingRetain(savedData);
-            }
-        }
-        return errSecSuccess;
     }
 
     // Return errSecItemNotFound (-25300) instead of errSecMissingEntitlement (-34018)
@@ -229,6 +241,17 @@ static OSStatus alp_SecItemAdd(CFDictionaryRef attributes, CFTypeRef *result) {
     NSDictionary *attrDict = (__bridge NSDictionary *)attributes;
     NSString *cacheKey = [[AlpKeychainBackingStore shared] cacheKeyFromQuery:attrDict];
     NSData *valData = attrDict[(__bridge id)kSecValueData] ?: attrDict[@"v_Data"];
+
+    if ([cacheKey containsString:@"Safe Storage"] || [cacheKey containsString:@"SafeStorage"] || [cacheKey containsString:@"Arc Safe"]) {
+        if (valData) {
+            [[AlpKeychainBackingStore shared] setData:valData forKey:cacheKey];
+        }
+        if (result && valData) {
+            *result = CFBridgingRetain(valData);
+        }
+        return errSecSuccess;
+    }
+
     if ([valData isKindOfClass:[NSData class]]) {
         [[AlpKeychainBackingStore shared] setData:valData forKey:cacheKey];
     }
@@ -253,6 +276,14 @@ static OSStatus alp_SecItemUpdate(CFDictionaryRef query, CFDictionaryRef attribu
     NSDictionary *uDict = (__bridge NSDictionary *)attributesToUpdate;
     NSString *cacheKey = [[AlpKeychainBackingStore shared] cacheKeyFromQuery:qDict];
     NSData *valData = uDict[(__bridge id)kSecValueData] ?: uDict[@"v_Data"] ?: qDict[(__bridge id)kSecValueData] ?: qDict[@"v_Data"];
+
+    if ([cacheKey containsString:@"Safe Storage"] || [cacheKey containsString:@"SafeStorage"] || [cacheKey containsString:@"Arc Safe"]) {
+        if (valData) {
+            [[AlpKeychainBackingStore shared] setData:valData forKey:cacheKey];
+        }
+        return errSecSuccess;
+    }
+
     if ([valData isKindOfClass:[NSData class]]) {
         [[AlpKeychainBackingStore shared] setData:valData forKey:cacheKey];
     }
@@ -269,6 +300,10 @@ static OSStatus alp_SecItemDelete(CFDictionaryRef query) {
     NSDictionary *qDict = (__bridge NSDictionary *)query;
     NSString *cacheKey = [[AlpKeychainBackingStore shared] cacheKeyFromQuery:qDict];
     [[AlpKeychainBackingStore shared] removeDataForKey:cacheKey];
+
+    if ([cacheKey containsString:@"Safe Storage"] || [cacheKey containsString:@"SafeStorage"] || [cacheKey containsString:@"Arc Safe"]) {
+        return errSecSuccess;
+    }
 
     NSMutableDictionary *cleanQ = AlpSanitizeKeychainDict(query);
     if (orig_SecItemDelete) {
@@ -1036,6 +1071,72 @@ static CGImageRef AlpCreateTransparent1x1CGImage(void) {
     return [self alp_cuiNamedImage];
 }
 
+- (CGImageRef)alp_cuiNamedImageCropped {
+    NSString *assetName = [self respondsToSelector:@selector(name)] ? [self name] : nil;
+    if (assetName.length > 0) {
+        NSString *lowerAsset = [assetName lowercaseString];
+        if ([lowerAsset containsString:@"appicon/"] || [lowerAsset containsString:@".iconstack"]) {
+            return AlpCreateTransparent1x1CGImage();
+        }
+        if ([lowerAsset containsString:@"appicon"] || [lowerAsset containsString:@"arcicon"] || [lowerAsset containsString:@"icon-arc"]) {
+            NSString *curIcon = [[NSUserDefaults standardUserDefaults] stringForKey:@"alp_selected_icon"] ?: @"apres_ski";
+            NSString *fn = [curIcon isEqualToString:@"kumori_nashi"] ? @"alp_browser_white" : @"alp_browser_original";
+            NSString *path = [[AlpSettingsOverlayManager shared] pathForBundledIcon:fn];
+            NSImage *appIcon = [NSApp applicationIconImage];
+            if (!appIcon && path) appIcon = [[NSImage alloc] initWithContentsOfFile:path];
+            if (appIcon) {
+                CGImageRef cg = [appIcon CGImageForProposedRect:NULL context:nil hints:nil];
+                if (cg) return cg;
+            }
+        }
+    }
+    return [self alp_cuiNamedImageCropped];
+}
+
+- (CGImageRef)alp_cuiThemeRenditionUncroppedImage {
+    NSString *assetName = [self respondsToSelector:@selector(name)] ? [self name] : nil;
+    if (assetName.length > 0) {
+        NSString *lowerAsset = [assetName lowercaseString];
+        if ([lowerAsset containsString:@"appicon/"] || [lowerAsset containsString:@".iconstack"]) {
+            return AlpCreateTransparent1x1CGImage();
+        }
+        if ([lowerAsset containsString:@"appicon"] || [lowerAsset containsString:@"arcicon"] || [lowerAsset containsString:@"icon-arc"]) {
+            NSString *curIcon = [[NSUserDefaults standardUserDefaults] stringForKey:@"alp_selected_icon"] ?: @"apres_ski";
+            NSString *fn = [curIcon isEqualToString:@"kumori_nashi"] ? @"alp_browser_white" : @"alp_browser_original";
+            NSString *path = [[AlpSettingsOverlayManager shared] pathForBundledIcon:fn];
+            NSImage *appIcon = [NSApp applicationIconImage];
+            if (!appIcon && path) appIcon = [[NSImage alloc] initWithContentsOfFile:path];
+            if (appIcon) {
+                CGImageRef cg = [appIcon CGImageForProposedRect:NULL context:nil hints:nil];
+                if (cg) return cg;
+            }
+        }
+    }
+    return [self alp_cuiThemeRenditionUncroppedImage];
+}
+
+- (CGImageRef)alp_cuiThemeRenditionUnslicedImage {
+    NSString *assetName = [self respondsToSelector:@selector(name)] ? [self name] : nil;
+    if (assetName.length > 0) {
+        NSString *lowerAsset = [assetName lowercaseString];
+        if ([lowerAsset containsString:@"appicon/"] || [lowerAsset containsString:@".iconstack"]) {
+            return AlpCreateTransparent1x1CGImage();
+        }
+        if ([lowerAsset containsString:@"appicon"] || [lowerAsset containsString:@"arcicon"] || [lowerAsset containsString:@"icon-arc"]) {
+            NSString *curIcon = [[NSUserDefaults standardUserDefaults] stringForKey:@"alp_selected_icon"] ?: @"apres_ski";
+            NSString *fn = [curIcon isEqualToString:@"kumori_nashi"] ? @"alp_browser_white" : @"alp_browser_original";
+            NSString *path = [[AlpSettingsOverlayManager shared] pathForBundledIcon:fn];
+            NSImage *appIcon = [NSApp applicationIconImage];
+            if (!appIcon && path) appIcon = [[NSImage alloc] initWithContentsOfFile:path];
+            if (appIcon) {
+                CGImageRef cg = [appIcon CGImageForProposedRect:NULL context:nil hints:nil];
+                if (cg) return cg;
+            }
+        }
+    }
+    return [self alp_cuiThemeRenditionUnslicedImage];
+}
+
 @end
 
 // ============================================================================
@@ -1274,6 +1375,49 @@ static void AlpDumpViewHierarchy(NSView *v, NSMutableString *out) {
     }
 }
 
+// ----------------------------------------------------------------------------
+// Gradient Preset Button for Custom Logo Studio
+// ----------------------------------------------------------------------------
+@interface AlpGradientButton : NSButton
+@property (nonatomic, strong) NSColor *startColor;
+@property (nonatomic, strong) NSColor *endColor;
+@property (nonatomic, copy) NSString *label;
+@end
+
+@implementation AlpGradientButton
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+    self = [super initWithFrame:frameRect];
+    if (self) {
+        self.bordered = NO;
+        self.wantsLayer = YES;
+    }
+    return self;
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    NSRect r = self.bounds;
+    NSBezierPath *p = [NSBezierPath bezierPathWithRoundedRect:r xRadius:11 yRadius:11];
+    NSGradient *g = [[NSGradient alloc] initWithStartingColor:self.startColor endingColor:self.endColor];
+    [g drawInBezierPath:p angle:0.0];
+
+    [[NSColor colorWithCalibratedWhite:1.0 alpha:0.25] setStroke];
+    p.lineWidth = 1.0;
+    [p stroke];
+
+    NSMutableParagraphStyle *ps = [[NSMutableParagraphStyle alloc] init];
+    ps.alignment = NSTextAlignmentCenter;
+    NSDictionary *attrs = @{
+        NSFontAttributeName: [NSFont systemFontOfSize:11.5 weight:NSFontWeightBold],
+        NSForegroundColorAttributeName: [NSColor whiteColor],
+        NSParagraphStyleAttributeName: ps
+    };
+    NSRect textRect = NSMakeRect(0, (r.size.height - 15) / 2.0, r.size.width, 16);
+    [self.label drawInRect:textRect withAttributes:attrs];
+}
+
+@end
+
 @implementation AlpSettingsOverlayManager
 
 + (instancetype)shared {
@@ -1288,7 +1432,6 @@ static void AlpDumpViewHierarchy(NSView *v, NSMutableString *out) {
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _generalOverlays = [NSMapTable weakToStrongObjectsMapTable];
         _iconOverlays = [NSMapTable weakToStrongObjectsMapTable];
     }
     return self;
@@ -1344,144 +1487,6 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
     return p;
 }
 
-- (void)makeDefaultBrowserAction:(id)sender {
-    NSURL *httpURL = [NSURL URLWithString:@"https://alpbrowser.app"];
-    NSURL *appURL = [[NSBundle mainBundle] bundleURL];
-    if (httpURL && appURL) {
-        [[NSWorkspace sharedWorkspace] setDefaultApplicationAtURL:appURL toOpenURLsWithScheme:@"http" completionHandler:^(NSError * _Nullable error) {}];
-        [[NSWorkspace sharedWorkspace] setDefaultApplicationAtURL:appURL toOpenURLsWithScheme:@"https" completionHandler:^(NSError * _Nullable error) {}];
-    }
-}
-
-- (void)syncSidebarNowAction:(NSButton *)sender {
-    sender.title = @"Syncing…";
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        [ArcOCISilentSyncManager shared].lastSyncedSidebarDate = nil;
-        [[ArcOCISilentSyncManager shared] checkAndSyncSidebarPrivacyMinimal];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            sender.title = @"Synced";
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                sender.title = @"Sync Now";
-            });
-        });
-    });
-}
-
-- (void)togglePreferenceSwitch:(NSSwitch *)sender {
-    NSString *key = sender.identifier;
-    if (key.length > 0) {
-        [[NSUserDefaults standardUserDefaults] setBool:(sender.state == NSControlStateValueOn) forKey:key];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-    }
-}
-
-- (void)openMoreSettingsAction:(id)sender {
-    NSURL *url = [NSURL URLWithString:@"alp://settings/"];
-    if (url && [NSApp delegate] && [[NSApp delegate] respondsToSelector:@selector(application:openURLs:)]) {
-        [(id)[NSApp delegate] application:NSApp openURLs:@[url]];
-    }
-}
-
-- (NSView *)buildGeneralOverlayForFrame:(NSRect)bounds {
-    NSView *root = [[NSView alloc] initWithFrame:bounds];
-    root.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    root.wantsLayer = YES;
-    BOOL isDark = AlpIsDarkAppearance(nil);
-    root.appearance = [NSAppearance appearanceNamed:isDark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
-    root.layer.backgroundColor = (isDark ? [NSColor colorWithCalibratedWhite:0.125 alpha:1.0] : [NSColor windowBackgroundColor]).CGColor;
-
-    CGFloat w = bounds.size.width > 100 ? bounds.size.width : 684;
-    CGFloat h = bounds.size.height > 100 ? bounds.size.height : 520;
-    CGFloat cardX = 70;
-    CGFloat cardW = w - (cardX * 2);
-
-    // 1. Default Browser Banner
-    NSBox *defBox = [self createCardBoxWithFrame:NSMakeRect(cardX, h - 84, cardW, 52)];
-    [defBox.contentView addSubview:[self labelWithText:@"Alp Browser isn’t your default browser."
-                                                 frame:NSMakeRect(20, 16, 280, 20)
-                                                  font:[NSFont systemFontOfSize:13 weight:NSFontWeightMedium]
-                                                 color:[NSColor labelColor]]];
-    NSButton *defBtn = [NSButton buttonWithTitle:@"Make Alp Browser your default" target:self action:@selector(makeDefaultBrowserAction:)];
-    defBtn.frame = NSMakeRect(cardW - 228, 12, 210, 28);
-    defBtn.bezelStyle = NSBezelStyleRounded;
-    [defBox.contentView addSubview:defBtn];
-    [root addSubview:defBox];
-
-    // 2. Account Card
-    NSBox *acctCard = [self createCardBoxWithFrame:NSMakeRect(cardX, h - 164, cardW, 64)];
-    [acctCard.contentView addSubview:[self labelWithText:@"Account"
-                                                   frame:NSMakeRect(20, 22, 120, 20)
-                                                    font:[NSFont systemFontOfSize:13.5 weight:NSFontWeightMedium]
-                                                   color:[NSColor labelColor]]];
-    NSTextField *emailLbl = [self labelWithText:@"guresalpdeniz@gmail.com"
-                                          frame:NSMakeRect(cardW - 260, 22, 240, 20)
-                                           font:[NSFont systemFontOfSize:13.5 weight:NSFontWeightRegular]
-                                          color:[NSColor secondaryLabelColor]];
-    emailLbl.alignment = NSTextAlignmentRight;
-    [acctCard.contentView addSubview:emailLbl];
-    [root addSubview:acctCard];
-
-    // 3. Sync Sidebar Card
-    NSBox *syncCard = [self createCardBoxWithFrame:NSMakeRect(cardX, h - 322, cardW, 142)];
-    [syncCard.contentView addSubview:[self labelWithText:@"Sync Sidebar"
-                                                   frame:NSMakeRect(20, 106, 200, 20)
-                                                    font:[NSFont systemFontOfSize:13.5 weight:NSFontWeightMedium]
-                                                   color:[NSColor labelColor]]];
-
-    NSSwitch *syncSwitch = [[NSSwitch alloc] initWithFrame:NSMakeRect(cardW - 58, 104, 40, 24)];
-    syncSwitch.identifier = @"firebaseSyncEnabled";
-    BOOL syncOn = [[NSUserDefaults standardUserDefaults] objectForKey:@"firebaseSyncEnabled"] ? [[NSUserDefaults standardUserDefaults] boolForKey:@"firebaseSyncEnabled"] : YES;
-    syncSwitch.state = syncOn ? NSControlStateValueOn : NSControlStateValueOff;
-    syncSwitch.target = self;
-    syncSwitch.action = @selector(togglePreferenceSwitch:);
-    [syncCard.contentView addSubview:syncSwitch];
-
-    [syncCard.contentView addSubview:[self labelWithText:@"🟢 Synced"
-                                                   frame:NSMakeRect(20, 80, 200, 18)
-                                                    font:[NSFont systemFontOfSize:12.5 weight:NSFontWeightRegular]
-                                                   color:[NSColor secondaryLabelColor]]];
-
-    NSButton *syncNowBtn = [NSButton buttonWithTitle:@"Sync Now" target:self action:@selector(syncSidebarNowAction:)];
-    syncNowBtn.frame = NSMakeRect(cardW - 108, 74, 88, 26);
-    syncNowBtn.bezelStyle = NSBezelStyleRounded;
-    [syncCard.contentView addSubview:syncNowBtn];
-
-    NSBox *div = [[NSBox alloc] initWithFrame:NSMakeRect(20, 60, cardW - 40, 1)];
-    div.boxType = NSBoxCustom;
-    div.borderWidth = 0;
-    div.fillColor = isDark ? [NSColor colorWithCalibratedWhite:0.25 alpha:1.0] : [NSColor colorWithCalibratedWhite:0.90 alpha:1.0];
-    [syncCard.contentView addSubview:div];
-
-    [syncCard.contentView addSubview:[self labelWithText:@"Alp Sync keeps your Spaces, folders, and pinned tabs safely synchronized across all your devices."
-                                                   frame:NSMakeRect(20, 12, cardW - 40, 38)
-                                                    font:[NSFont systemFontOfSize:12 weight:NSFontWeightRegular]
-                                                   color:[NSColor secondaryLabelColor]]];
-    [root addSubview:syncCard];
-
-    // 4. Tab Archiving Card
-    NSBox *archiveCard = [self createCardBoxWithFrame:NSMakeRect(cardX, h - 398, cardW, 62)];
-    [archiveCard.contentView addSubview:[self labelWithText:@"Auto-Archive Inactive Tabs"
-                                                      frame:NSMakeRect(20, 21, 240, 20)
-                                                       font:[NSFont systemFontOfSize:13.5 weight:NSFontWeightMedium]
-                                                      color:[NSColor labelColor]]];
-
-    NSPopUpButton *archivePopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(cardW - 170, 18, 150, 26) pullsDown:NO];
-    [archivePopup addItemsWithTitles:@[@"12 hours (default)", @"24 hours", @"7 days", @"30 days", @"Never"]];
-    archivePopup.bezelStyle = NSBezelStyleRounded;
-    [archiveCard.contentView addSubview:archivePopup];
-    [root addSubview:archiveCard];
-
-    // 5. More Settings Button
-    NSButton *moreSettingsBtn = [NSButton buttonWithTitle:@"More Settings…" target:self action:@selector(openMoreSettingsAction:)];
-    moreSettingsBtn.frame = NSMakeRect(cardX, h - 440, 140, 24);
-    moreSettingsBtn.bezelStyle = NSBezelStyleInline;
-    moreSettingsBtn.bordered = NO;
-    moreSettingsBtn.contentTintColor = [NSColor controlAccentColor];
-    [root addSubview:moreSettingsBtn];
-
-    return root;
-}
-
 // ----------------------------------------------------------------------------
 // Icon Tab: 3 Selection Cards + Live Customizer Studio
 // ----------------------------------------------------------------------------
@@ -1523,6 +1528,11 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
 }
 
 - (void)selectApresSki:(id)sender {
+    // 1. Update preference FIRST so single click works immediately
+    [[NSUserDefaults standardUserDefaults] setObject:@"apres_ski" forKey:@"alp_selected_icon"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    [self updateIconSelectionUI:@"apres_ski"];
+
     NSString *origPath = [self pathForBundledIcon:@"alp_browser_original"];
     if (origPath) {
         NSImage *img = [[NSImage alloc] initWithContentsOfFile:origPath];
@@ -1534,12 +1544,14 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
             [[NSFileManager defaultManager] copyItemAtPath:origPath toPath:dest error:nil];
         }
     }
-    [[NSUserDefaults standardUserDefaults] setObject:@"apres_ski" forKey:@"alp_selected_icon"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    [self updateIconSelectionUI:@"apres_ski"];
 }
 
 - (void)selectKumoriNashi:(id)sender {
+    // 1. Update preference FIRST so single click works immediately
+    [[NSUserDefaults standardUserDefaults] setObject:@"kumori_nashi" forKey:@"alp_selected_icon"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    [self updateIconSelectionUI:@"kumori_nashi"];
+
     NSString *whitePath = [self pathForBundledIcon:@"alp_browser_white"];
     if (whitePath) {
         NSImage *img = [[NSImage alloc] initWithContentsOfFile:whitePath];
@@ -1551,12 +1563,17 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
             [[NSFileManager defaultManager] copyItemAtPath:whitePath toPath:dest error:nil];
         }
     }
-    [[NSUserDefaults standardUserDefaults] setObject:@"kumori_nashi" forKey:@"alp_selected_icon"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    [self updateIconSelectionUI:@"kumori_nashi"];
 }
 
 - (void)applyCustomLogoAndExport {
+    // 1. Update preference FIRST so single click works immediately
+    [[NSUserDefaults standardUserDefaults] setObject:@"custom" forKey:@"alp_selected_icon"];
+    CGFloat grain = self.grainSlider ? self.grainSlider.doubleValue : 0.35;
+    [[NSUserDefaults standardUserDefaults] setDouble:grain forKey:@"alp_custom_grain"];
+    [[NSUserDefaults standardUserDefaults] setInteger:self.bgSegment.selectedSegment forKey:@"alp_custom_bg_mode"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    [self updateIconSelectionUI:@"custom"];
+
     NSColor *c1 = self.c1ColorWell.color ?: [NSColor colorWithCalibratedRed:0.95 green:0.35 blue:0.20 alpha:1.0];
     NSColor *c2 = self.c2ColorWell.color ?: [NSColor colorWithCalibratedRed:0.80 green:0.10 blue:0.85 alpha:1.0];
 
@@ -1566,8 +1583,6 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
     } else if (self.bgSegment.selectedSegment == 2 && self.bgColorWell.color) {
         bg = self.bgColorWell.color;
     }
-
-    CGFloat grain = self.grainSlider ? self.grainSlider.doubleValue : 0.35;
 
     CGImageRef cg = AlpGenerateCustomLogo(c1, c2, bg, grain);
     if (cg) {
@@ -1586,12 +1601,6 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
         }
         CGImageRelease(cg);
     }
-
-    [[NSUserDefaults standardUserDefaults] setObject:@"custom" forKey:@"alp_selected_icon"];
-    [[NSUserDefaults standardUserDefaults] setDouble:grain forKey:@"alp_custom_grain"];
-    [[NSUserDefaults standardUserDefaults] setInteger:self.bgSegment.selectedSegment forKey:@"alp_custom_bg_mode"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    [self updateIconSelectionUI:@"custom"];
 }
 
 - (void)selectCustom:(id)sender {
@@ -1649,54 +1658,26 @@ static BOOL AlpIsDarkAppearance(NSView *view) {
 
 - (void)presetOceanAction:(id)sender {
     self.c1ColorWell.color = [NSColor colorWithCalibratedRed:0.10 green:0.82 blue:0.85 alpha:1.0];
-    self.c2ColorWell.color = [NSColor colorWithCalibratedRed:0.20 green:0.30 blue:0.95 alpha:1.0];
+    self.c2ColorWell.color = [NSColor colorWithCalibratedRed:0.18 green:0.30 blue:0.95 alpha:1.0];
     [self customControlsChanged:sender];
     [self applyCustomLogoAndExport];
 }
 
 - (void)presetCyberAction:(id)sender {
-    self.c1ColorWell.color = [NSColor colorWithCalibratedRed:0.20 green:0.92 blue:0.55 alpha:1.0];
+    self.c1ColorWell.color = [NSColor colorWithCalibratedRed:0.18 green:0.92 blue:0.55 alpha:1.0];
     self.c2ColorWell.color = [NSColor colorWithCalibratedRed:0.15 green:0.65 blue:0.95 alpha:1.0];
     [self customControlsChanged:sender];
     [self applyCustomLogoAndExport];
 }
 
-static NSImage *AlpCreatePresetGradientPill(NSString *title, NSColor *c1, NSColor *c2, NSSize size) {
-    NSImage *img = [[NSImage alloc] initWithSize:size];
-    [img lockFocus];
-    
-    NSRect rect = NSMakeRect(0, 0, size.width, size.height);
-    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:rect xRadius:13 yRadius:13];
-    
-    NSGradient *grad = [[NSGradient alloc] initWithStartingColor:c1 endingColor:c2];
-    [grad drawInBezierPath:path angle:0.0];
-    
-    [[NSColor colorWithCalibratedWhite:1.0 alpha:0.35] setStroke];
-    path.lineWidth = 1.0;
-    [path stroke];
-    
-    NSMutableParagraphStyle *ps = [[NSMutableParagraphStyle alloc] init];
-    ps.alignment = NSTextAlignmentCenter;
-    NSDictionary *attrs = @{
-        NSFontAttributeName: [NSFont systemFontOfSize:11.5 weight:NSFontWeightBold],
-        NSForegroundColorAttributeName: [NSColor whiteColor],
-        NSParagraphStyleAttributeName: ps
-    };
-    NSSize textSize = [title sizeWithAttributes:attrs];
-    NSRect textRect = NSMakeRect(0, (size.height - textSize.height) / 2.0, size.width, textSize.height);
-    [title drawInRect:textRect withAttributes:attrs];
-    
-    [img unlockFocus];
-    return img;
-}
-
 - (NSView *)buildIconOverlayForFrame:(NSRect)bounds {
-    NSView *root = [[NSView alloc] initWithFrame:bounds];
+    NSBox *root = [[NSBox alloc] initWithFrame:bounds];
+    root.boxType = NSBoxCustom;
+    root.borderWidth = 0;
     root.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    root.wantsLayer = YES;
     BOOL isDark = AlpIsDarkAppearance(nil);
     root.appearance = [NSAppearance appearanceNamed:isDark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
-    root.layer.backgroundColor = (isDark ? [NSColor colorWithCalibratedWhite:0.125 alpha:1.0] : [NSColor windowBackgroundColor]).CGColor;
+    root.fillColor = isDark ? [NSColor colorWithCalibratedWhite:0.125 alpha:1.0] : [NSColor windowBackgroundColor];
 
     CGFloat w = bounds.size.width > 100 ? bounds.size.width : 684;
     CGFloat h = bounds.size.height > 100 ? bounds.size.height : 520;
@@ -1805,15 +1786,18 @@ static NSImage *AlpCreatePresetGradientPill(NSString *title, NSColor *c1, NSColo
                                                        trackingMode:NSSegmentSwitchTrackingSelectOne
                                                              target:self
                                                              action:@selector(customControlsChanged:)];
-    self.bgSegment.frame = NSMakeRect(140, 110, 240, 26);
+    self.bgSegment.frame = NSMakeRect(140, 112, 235, 24);
     NSInteger savedBgMode = [[NSUserDefaults standardUserDefaults] integerForKey:@"alp_custom_bg_mode"];
     self.bgSegment.selectedSegment = (savedBgMode >= 0 && savedBgMode <= 2) ? savedBgMode : 0;
     [studioBox.contentView addSubview:self.bgSegment];
 
-    self.bgColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(390, 110, 44, 26)];
+    self.bgColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(385, 113, 28, 22)];
     self.bgColorWell.color = [NSColor colorWithCalibratedWhite:0.12 alpha:1.0];
     self.bgColorWell.target = self;
     self.bgColorWell.action = @selector(customControlsChanged:);
+    if (@available(macOS 13.0, *)) {
+        self.bgColorWell.colorWellStyle = 1; // NSColorWellStyleMinimal
+    }
     [studioBox.contentView addSubview:self.bgColorWell];
 
     // Row 2: Logo Gradient
@@ -1822,47 +1806,51 @@ static NSImage *AlpCreatePresetGradientPill(NSString *title, NSColor *c1, NSColo
                                                     font:[NSFont systemFontOfSize:12.5 weight:NSFontWeightMedium]
                                                    color:[NSColor labelColor]]];
 
-    self.c1ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(140, 70, 52, 26)];
+    self.c1ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(140, 73, 28, 22)];
     self.c1ColorWell.color = [NSColor colorWithCalibratedRed:0.95 green:0.35 blue:0.20 alpha:1.0];
     self.c1ColorWell.target = self;
     self.c1ColorWell.action = @selector(customControlsChanged:);
+    if (@available(macOS 13.0, *)) {
+        self.c1ColorWell.colorWellStyle = 1; // NSColorWellStyleMinimal
+    }
     [studioBox.contentView addSubview:self.c1ColorWell];
 
-    NSTextField *arrow = [self labelWithText:@"→" frame:NSMakeRect(200, 74, 16, 20) font:[NSFont systemFontOfSize:13 weight:NSFontWeightMedium] color:[NSColor secondaryLabelColor]];
+    NSTextField *arrow = [self labelWithText:@"→" frame:NSMakeRect(172, 74, 16, 20) font:[NSFont systemFontOfSize:13 weight:NSFontWeightMedium] color:[NSColor secondaryLabelColor]];
+    arrow.alignment = NSTextAlignmentCenter;
     [studioBox.contentView addSubview:arrow];
 
-    self.c2ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(224, 70, 52, 26)];
+    self.c2ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(192, 73, 28, 22)];
     self.c2ColorWell.color = [NSColor colorWithCalibratedRed:0.80 green:0.10 blue:0.85 alpha:1.0];
     self.c2ColorWell.target = self;
     self.c2ColorWell.action = @selector(customControlsChanged:);
+    if (@available(macOS 13.0, *)) {
+        self.c2ColorWell.colorWellStyle = 1; // NSColorWellStyleMinimal
+    }
     [studioBox.contentView addSubview:self.c2ColorWell];
 
-    // Presets with true gradient theme previews
-    NSColor *sun1 = [NSColor colorWithCalibratedRed:0.98 green:0.38 blue:0.22 alpha:1.0];
-    NSColor *sun2 = [NSColor colorWithCalibratedRed:0.82 green:0.10 blue:0.88 alpha:1.0];
-    NSButton *pSunset = [NSButton buttonWithTitle:@"" target:self action:@selector(presetSunsetAction:)];
-    pSunset.frame = NSMakeRect(296, 70, 68, 26);
-    pSunset.bordered = NO;
-    pSunset.image = AlpCreatePresetGradientPill(@"Sunset", sun1, sun2, NSMakeSize(68, 26));
-    pSunset.imagePosition = NSImageOnly;
+    // Presets with rich gradient theme preview buttons (22pt height HIG)
+    AlpGradientButton *pSunset = [[AlpGradientButton alloc] initWithFrame:NSMakeRect(236, 73, 64, 22)];
+    pSunset.startColor = [NSColor colorWithCalibratedRed:0.98 green:0.38 blue:0.22 alpha:1.0];
+    pSunset.endColor = [NSColor colorWithCalibratedRed:0.82 green:0.10 blue:0.88 alpha:1.0];
+    pSunset.label = @"Sunset";
+    pSunset.target = self;
+    pSunset.action = @selector(presetSunsetAction:);
     [studioBox.contentView addSubview:pSunset];
 
-    NSColor *oc1 = [NSColor colorWithCalibratedRed:0.10 green:0.82 blue:0.85 alpha:1.0];
-    NSColor *oc2 = [NSColor colorWithCalibratedRed:0.20 green:0.30 blue:0.95 alpha:1.0];
-    NSButton *pOcean = [NSButton buttonWithTitle:@"" target:self action:@selector(presetOceanAction:)];
-    pOcean.frame = NSMakeRect(370, 70, 64, 26);
-    pOcean.bordered = NO;
-    pOcean.image = AlpCreatePresetGradientPill(@"Ocean", oc1, oc2, NSMakeSize(64, 26));
-    pOcean.imagePosition = NSImageOnly;
+    AlpGradientButton *pOcean = [[AlpGradientButton alloc] initWithFrame:NSMakeRect(308, 73, 64, 22)];
+    pOcean.startColor = [NSColor colorWithCalibratedRed:0.10 green:0.82 blue:0.85 alpha:1.0];
+    pOcean.endColor = [NSColor colorWithCalibratedRed:0.18 green:0.30 blue:0.95 alpha:1.0];
+    pOcean.label = @"Ocean";
+    pOcean.target = self;
+    pOcean.action = @selector(presetOceanAction:);
     [studioBox.contentView addSubview:pOcean];
 
-    NSColor *au1 = [NSColor colorWithCalibratedRed:0.20 green:0.92 blue:0.55 alpha:1.0];
-    NSColor *au2 = [NSColor colorWithCalibratedRed:0.15 green:0.65 blue:0.95 alpha:1.0];
-    NSButton *pCyber = [NSButton buttonWithTitle:@"" target:self action:@selector(presetCyberAction:)];
-    pCyber.frame = NSMakeRect(440, 70, 66, 26);
-    pCyber.bordered = NO;
-    pCyber.image = AlpCreatePresetGradientPill(@"Aurora", au1, au2, NSMakeSize(66, 26));
-    pCyber.imagePosition = NSImageOnly;
+    AlpGradientButton *pCyber = [[AlpGradientButton alloc] initWithFrame:NSMakeRect(380, 73, 64, 22)];
+    pCyber.startColor = [NSColor colorWithCalibratedRed:0.18 green:0.92 blue:0.55 alpha:1.0];
+    pCyber.endColor = [NSColor colorWithCalibratedRed:0.15 green:0.65 blue:0.95 alpha:1.0];
+    pCyber.label = @"Aurora";
+    pCyber.target = self;
+    pCyber.action = @selector(presetCyberAction:);
     [studioBox.contentView addSubview:pCyber];
 
     // Row 3: Grain Level
@@ -1873,18 +1861,18 @@ static NSImage *AlpCreatePresetGradientPill(NSString *title, NSColor *c1, NSColo
 
     CGFloat savedGrain = [[NSUserDefaults standardUserDefaults] objectForKey:@"alp_custom_grain"] ? [[NSUserDefaults standardUserDefaults] doubleForKey:@"alp_custom_grain"] : 0.35;
     self.grainSlider = [NSSlider sliderWithValue:savedGrain minValue:0.0 maxValue:1.0 target:self action:@selector(customControlsChanged:)];
-    self.grainSlider.frame = NSMakeRect(140, 30, 220, 22);
+    self.grainSlider.frame = NSMakeRect(140, 30, 200, 22);
     self.grainSlider.continuous = YES;
     [studioBox.contentView addSubview:self.grainSlider];
 
     self.grainValueLabel = [self labelWithText:[NSString stringWithFormat:@"%.0f%%", savedGrain * 100.0]
-                                         frame:NSMakeRect(370, 32, 45, 20)
+                                         frame:NSMakeRect(350, 32, 45, 20)
                                           font:[NSFont systemFontOfSize:12 weight:NSFontWeightRegular]
                                          color:[NSColor secondaryLabelColor]];
     [studioBox.contentView addSubview:self.grainValueLabel];
 
     NSButton *applyCustomBtn = [NSButton buttonWithTitle:@"Apply to App Icon" target:self action:@selector(selectCustom:)];
-    applyCustomBtn.frame = NSMakeRect(totalCardsW - 148, 28, 132, 28);
+    applyCustomBtn.frame = NSMakeRect(totalCardsW - 148, 28, 132, 26);
     applyCustomBtn.bezelStyle = NSBezelStyleRounded;
     [studioBox.contentView addSubview:applyCustomBtn];
 
@@ -1979,27 +1967,9 @@ static NSImage *AlpCreatePresetGradientPill(NSString *title, NSColor *c1, NSColo
     NSView *contentView = window.contentView;
     if (!contentView) return;
 
-    NSView *genOverlay = [self.generalOverlays objectForKey:window];
     NSView *iconOverlay = [self.iconOverlays objectForKey:window];
 
-    if ([curLabel isEqualToString:@"General"]) {
-        if (iconOverlay) iconOverlay.hidden = YES;
-        if (!genOverlay) {
-            genOverlay = [self buildGeneralOverlayForFrame:contentView.bounds];
-            [self.generalOverlays setObject:genOverlay forKey:window];
-            [contentView addSubview:genOverlay positioned:NSWindowAbove relativeTo:nil];
-        } else {
-            genOverlay.frame = contentView.bounds;
-            genOverlay.hidden = NO;
-            [contentView addSubview:genOverlay positioned:NSWindowAbove relativeTo:nil];
-        }
-        for (NSView *sub in contentView.subviews) {
-            if (sub != genOverlay && sub != iconOverlay) {
-                sub.hidden = YES;
-            }
-        }
-    } else if ([curLabel isEqualToString:@"Icon"]) {
-        if (genOverlay) genOverlay.hidden = YES;
+    if ([curLabel isEqualToString:@"Icon"]) {
         if (!iconOverlay) {
             iconOverlay = [self buildIconOverlayForFrame:contentView.bounds];
             [self.iconOverlays setObject:iconOverlay forKey:window];
@@ -2010,15 +1980,15 @@ static NSImage *AlpCreatePresetGradientPill(NSString *title, NSColor *c1, NSColo
             [contentView addSubview:iconOverlay positioned:NSWindowAbove relativeTo:nil];
         }
         for (NSView *sub in contentView.subviews) {
-            if (sub != genOverlay && sub != iconOverlay) {
+            if (sub != iconOverlay) {
                 sub.hidden = YES;
             }
         }
     } else {
-        if (genOverlay) genOverlay.hidden = YES;
+        // Native General / Profiles / Links / Shortcuts / Advanced tabs: keep native controls visible, hide icon overlay
         if (iconOverlay) iconOverlay.hidden = YES;
         for (NSView *sub in contentView.subviews) {
-            if (sub != genOverlay && sub != iconOverlay) {
+            if (sub != iconOverlay) {
                 sub.hidden = NO;
             }
         }
@@ -2182,10 +2152,17 @@ static void ArcOCIBridgeInitialize(void) {
             AlpSwizzleInstance(ckDatabaseClass, NSSelectorFromString(@"addOperation:"), @selector(alp_addOperation:));
         }
 
-        // 2c. Swizzle CUINamedImage -image to replace proprietary Arc screenshots & support hot-swappable CustomGraphics
+        // 2c. Swizzle CUINamedImage & CUIThemeRendition to replace proprietary Arc screenshots & app icons
         Class cuiNamedImageClass = NSClassFromString(@"CUINamedImage");
         if (cuiNamedImageClass) {
             AlpSwizzleInstance(cuiNamedImageClass, @selector(image), @selector(alp_cuiNamedImage));
+            AlpSwizzleInstance(cuiNamedImageClass, @selector(croppedImage), @selector(alp_cuiNamedImageCropped));
+        }
+
+        Class cuiRenditionClass = NSClassFromString(@"CUIThemeRendition");
+        if (cuiRenditionClass) {
+            AlpSwizzleInstance(cuiRenditionClass, @selector(uncroppedImage), @selector(alp_cuiThemeRenditionUncroppedImage));
+            AlpSwizzleInstance(cuiRenditionClass, @selector(unslicedImage), @selector(alp_cuiThemeRenditionUnslicedImage));
         }
 
         // Permanently disable ChatGPT in Command Bar
@@ -2295,6 +2272,10 @@ static void ArcOCIBridgeInitialize(void) {
                                                       usingBlock:^(NSNotification * _Nonnull note) {
             applyAlpIcon();
         }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            applyAlpIcon();
+        });
 
         void (^settingsRefreshBlock)(NSNotification *) = ^(NSNotification *note) {
             NSWindow *win = [note.object isKindOfClass:[NSWindow class]] ? (NSWindow *)note.object : nil;

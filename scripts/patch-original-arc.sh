@@ -255,9 +255,34 @@ cp "${PROJECT_DIR}/Icons/alp_browser_white.icns" "${ALP_APP}/Contents/Resources/
 cp "${PROJECT_DIR}/Icons/alp_mountain_mask.png" "${ALP_APP}/Contents/Resources/alp_mountain_mask.png"
 cp "${PROJECT_DIR}/Icons/alp_browser_original.icns" "${ALP_APP}/Contents/Resources/AppIcon.icns"
 
-# Permanently remove DockTilePlugIn so macOS Dock never loads Arc's original tile on launch/quit
+# Permanently remove DockTilePlugIn & CFBundleIconName so macOS Dock & Finder ONLY read AppIcon.icns
 /usr/libexec/PlistBuddy -c "Delete :NSDockTilePlugIn" "${ALP_APP}/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "${ALP_APP}/Contents/Info.plist" 2>/dev/null || true
 rm -rf "${ALP_APP}/Contents/PlugIns/DockTilePlugIn.plugin"
+
+# Neutralize any AppIcon inside all Assets.car catalogs so CoreUI never falls back to Arc logo
+python3 -c "
+import glob
+for car_path in glob.glob('${ALP_APP}/**/*.car', recursive=True):
+    try:
+        with open(car_path, 'r+b') as f:
+            data = f.read()
+            modified = False
+            for old, new in [
+                (b'AppIconOriginal', b'AlpIconOriginal'),
+                (b'AppIconFilled', b'AlpIconFilled'),
+                (b'AppIcon\x00', b'OldIcon\x00'),
+            ]:
+                if old in data:
+                    data = data.replace(old, new)
+                    modified = True
+            if modified:
+                f.seek(0)
+                f.write(data)
+                f.truncate()
+    except Exception:
+        pass
+" 2>/dev/null || true
 
 # Replace alert helper icons and eliminate Arc icon from quit/alert confirmation dialogs
 for HELPER in "Browser Helper (Alerts).app" "Browser Helper (Aperitif Alerts).app"; do
@@ -277,7 +302,7 @@ sips -z 32 32 "${PROJECT_DIR}/Icons/alp_mountain_mask.png" --out "${ALP_APP}/Con
 
 echo "6. Re-signing ${ALP_APP} and helper bundles..."
 xattr -cr "${ALP_APP}"
-codesign --force --deep --sign - "${ALP_APP}"
+codesign --force --deep --sign - --requirements '=designated => identifier "company.thebrowser.Browser"' "${ALP_APP}"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "${ALP_APP}"
 
 # Also create APFS zero-copy aliases at Arc-OCI.app and Arc2.app so all paths open Alp Browser

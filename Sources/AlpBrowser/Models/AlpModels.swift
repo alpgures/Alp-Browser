@@ -793,6 +793,7 @@ public struct PersistedBrowserStore: Codable {
     public var hasImportedFromArc: Bool
     public var selectedIconName: String
     public var customIconConfig: CustomIconConfig
+    public var sidebarWidth: Double
 
     public init(
         spaces: [AlpSpace] = [],
@@ -808,7 +809,8 @@ public struct PersistedBrowserStore: Codable {
         syncConfig: AlpSyncConfig = AlpSyncConfig(),
         hasImportedFromArc: Bool = false,
         selectedIconName: String = "alp_browser_original",
-        customIconConfig: CustomIconConfig = CustomIconConfig()
+        customIconConfig: CustomIconConfig = CustomIconConfig(),
+        sidebarWidth: Double = 256.0
     ) {
         self.spaces = spaces
         self.favorites = favorites
@@ -824,12 +826,13 @@ public struct PersistedBrowserStore: Codable {
         self.hasImportedFromArc = hasImportedFromArc
         self.selectedIconName = selectedIconName
         self.customIconConfig = customIconConfig
+        self.sidebarWidth = sidebarWidth
     }
 
     enum CodingKeys: String, CodingKey {
         case spaces, favorites, activeSpaceID, styles, canvases, notes, archivedTabs
         case autoArchiveHours, autoHibernateMinutes, adBlockerEnabled, syncConfig, hasImportedFromArc, selectedIconName
-        case customIconConfig
+        case customIconConfig, sidebarWidth
     }
 
     public init(from decoder: Decoder) throws {
@@ -848,5 +851,6 @@ public struct PersistedBrowserStore: Codable {
         self.hasImportedFromArc = try container.decodeIfPresent(Bool.self, forKey: .hasImportedFromArc) ?? false
         self.selectedIconName = try container.decodeIfPresent(String.self, forKey: .selectedIconName) ?? "alp_browser_original"
         self.customIconConfig = try container.decodeIfPresent(CustomIconConfig.self, forKey: .customIconConfig) ?? CustomIconConfig()
+        self.sidebarWidth = try container.decodeIfPresent(Double.self, forKey: .sidebarWidth) ?? 256.0
     }
 }

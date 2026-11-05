@@ -848,7 +848,8 @@ public final class BrowserState: ObservableObject {
             syncConfig: syncConfig,
             hasImportedFromArc: hasImportedFromArc,
             selectedIconName: selectedIconName,
-            customIconConfig: customIconConfig
+            customIconConfig: customIconConfig,
+            sidebarWidth: Double(sidebarWidth)
         )
     }
 
@@ -896,6 +897,7 @@ public final class BrowserState: ObservableObject {
                 self.hasImportedFromArc = store.hasImportedFromArc
                 self.selectedIconName = store.selectedIconName
                 self.customIconConfig = store.customIconConfig
+                self.sidebarWidth = CGFloat(store.sidebarWidth)
                 return
             }
         }

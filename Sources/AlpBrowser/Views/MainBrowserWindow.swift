@@ -182,6 +182,17 @@ public struct MainBrowserWindow: View {
             }
         }
         .ignoresSafeArea(.all)
+        .onExitCommand {
+            if browserState.isCommandBarPresented {
+                browserState.isCommandBarPresented = false
+            } else if browserState.isLibrarySheetPresented {
+                browserState.isLibrarySheetPresented = false
+            } else if browserState.isSiteControlCenterPresented {
+                browserState.isSiteControlCenterPresented = false
+            } else if browserState.peekSession != nil {
+                browserState.peekSession = nil
+            }
+        }
         .sheet(isPresented: $browserState.isSettingsPresented) {
             SettingsView()
                 .environmentObject(browserState)
@@ -252,29 +263,46 @@ public struct AlpSpaceBackgroundView: View {
 struct SidebarResizeHandle: View {
     @Binding var sidebarWidth: CGFloat
     @State private var isDragging = false
+    @State private var dragStartWidth: CGFloat = 256
 
     var body: some View {
-        Rectangle()
-            .fill(Color.clear)
-            .frame(width: 5)
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside {
-                    NSCursor.resizeLeftRight.push()
-                } else {
-                    NSCursor.pop()
-                }
+        ZStack {
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: 14)
+                .contentShape(Rectangle())
+
+            if isDragging {
+                Rectangle()
+                    .fill(Color.white.opacity(0.35))
+                    .frame(width: 1.5)
             }
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
+        }
+        .frame(width: 14)
+        .padding(.horizontal, -6)
+        .zIndex(100)
+        .onHover { inside in
+            if inside || isDragging {
+                NSCursor.resizeLeftRight.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    if !isDragging {
                         isDragging = true
-                        let newWidth = min(max(sidebarWidth + value.translation.width, 180), 380)
-                        sidebarWidth = newWidth
+                        dragStartWidth = sidebarWidth
                     }
-                    .onEnded { _ in
-                        isDragging = false
-                    }
-            )
+                    let proposed = dragStartWidth + value.translation.width
+                    let clamped = min(max(proposed, 170), 460)
+                    sidebarWidth = clamped
+                }
+                .onEnded { _ in
+                    isDragging = false
+                    BrowserState.shared.scheduleSave()
+                }
+        )
     }
 }

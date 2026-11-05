@@ -14,6 +14,7 @@ public struct CommandBarView: View {
 
     @State private var query: String = ""
     @State private var selectedIndex: Int = 0
+    @State private var keyMonitor: Any?
 
     private var openInCurrentTab: Bool {
         !browserState.commandBarInitialQuery.isEmpty
@@ -140,7 +141,9 @@ public struct CommandBarView: View {
 
     public var body: some View {
         ZStack {
-            Color.black.opacity(0.40)
+            // Transparent backdrop: does NOT dim screen, clicking outside dismisses
+            Color.clear
+                .contentShape(Rectangle())
                 .ignoresSafeArea()
                 .onTapGesture {
                     browserState.isCommandBarPresented = false
@@ -158,6 +161,22 @@ public struct CommandBarView: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.white)
                         .focused($isInputFocused)
+                        .onKeyPress(.escape) {
+                            browserState.isCommandBarPresented = false
+                            return .handled
+                        }
+                        .onKeyPress(.upArrow) {
+                            if selectedIndex > 0 {
+                                selectedIndex -= 1
+                            }
+                            return .handled
+                        }
+                        .onKeyPress(.downArrow) {
+                            if selectedIndex < suggestions.count - 1 {
+                                selectedIndex += 1
+                            }
+                            return .handled
+                        }
                         .onSubmit {
                             executeSelectedOrSubmit()
                         }
@@ -275,10 +294,39 @@ public struct CommandBarView: View {
             .shadow(color: .black.opacity(0.55), radius: 30, y: 14)
             .padding(.bottom, 120)
         }
+        .onExitCommand {
+            browserState.isCommandBarPresented = false
+        }
         .onAppear {
             query = browserState.commandBarInitialQuery
             isInputFocused = true
             selectedIndex = 0
+
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                if event.keyCode == 53 { // ESC key
+                    browserState.isCommandBarPresented = false
+                    return nil
+                }
+                if event.keyCode == 126 { // UP ARROW
+                    if selectedIndex > 0 {
+                        selectedIndex -= 1
+                    }
+                    return nil
+                }
+                if event.keyCode == 125 { // DOWN ARROW
+                    if selectedIndex < suggestions.count - 1 {
+                        selectedIndex += 1
+                    }
+                    return nil
+                }
+                return event
+            }
+        }
+        .onDisappear {
+            if let monitor = keyMonitor {
+                NSEvent.removeMonitor(monitor)
+                keyMonitor = nil
+            }
         }
     }
 

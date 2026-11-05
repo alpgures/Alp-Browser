@@ -962,6 +962,57 @@ public final class BrowserState: ObservableObject {
                 self?.updateMemoryMetrics()
             }
         }
+
+        // Run auto-archive check 5s after startup, then every 15 minutes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            self?.performAutoArchiving()
+        }
+
+        Timer.scheduledTimer(withTimeInterval: 900.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.performAutoArchiving()
+            }
+        }
+    }
+
+    public func performAutoArchiving() {
+        guard autoArchiveHours > 0 else { return } // 0 = Never
+        let expirationSeconds = autoArchiveHours * 3600.0
+        let now = Date()
+        var archivedCount = 0
+
+        for sIdx in spaces.indices {
+            let activeID = spaces[sIdx].activeTabID
+            let expiredTabs = spaces[sIdx].todayTabs.filter { tab in
+                guard tab.id != activeID && !tab.isPlayingAudio else { return false }
+                let elapsed = now.timeIntervalSince(tab.lastActiveAt)
+                return elapsed >= expirationSeconds
+            }
+
+            for tab in expiredTabs {
+                WebViewPool.shared.destroyWebView(for: tab.id)
+                archivedTabs.insert(
+                    ArchivedTab(
+                        id: UUID(),
+                        title: tab.displayTitle,
+                        urlString: tab.urlString,
+                        spaceTitle: spaces[sIdx].title,
+                        archivedAt: now,
+                        reason: "Auto-Archive (\(Int(autoArchiveHours))h)"
+                    ),
+                    at: 0
+                )
+                archivedCount += 1
+            }
+
+            spaces[sIdx].todayTabs.removeAll { tab in
+                expiredTabs.contains(where: { $0.id == tab.id })
+            }
+        }
+
+        if archivedCount > 0 {
+            scheduleSave()
+        }
     }
 
     private func updateMemoryMetrics() {

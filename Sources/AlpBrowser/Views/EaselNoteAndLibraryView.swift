@@ -203,39 +203,80 @@ public struct NoteEditorView: View {
 
     @State private var draftTitle: String = ""
     @State private var draftBody: String = ""
+    @State private var isPreviewMode: Bool = false
 
     public init(noteID: UUID) {
         self.noteID = noteID
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            TextField("Note Title", text: $draftTitle)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .textFieldStyle(.plain)
-                .padding(.horizontal, 36)
-                .padding(.top, 36)
-                .onChange(of: draftTitle) { _, newVal in
-                    guard let idx = noteIndex else { return }
-                    browserState.notes[idx].title = newVal
-                    browserState.notes[idx].updatedAt = Date()
-                    browserState.scheduleSave()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                TextField("Note Title", text: $draftTitle)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .textFieldStyle(.plain)
+                    .onChange(of: draftTitle) { _, newVal in
+                        guard let idx = noteIndex else { return }
+                        browserState.notes[idx].title = newVal
+                        browserState.notes[idx].updatedAt = Date()
+                        browserState.scheduleSave()
+                    }
+
+                Spacer()
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isPreviewMode.toggle()
+                    }
+                } label: {
+                    Label(isPreviewMode ? "Edit" : "Preview", systemImage: isPreviewMode ? "pencil" : "eye")
+                        .font(.system(size: 11.5, weight: .medium))
                 }
+                .buttonStyle(.bordered)
+            }
+            .padding(.horizontal, 36)
+            .padding(.top, 28)
+
+            // Markdown Quick-Formatting Toolbar
+            if !isPreviewMode {
+                HStack(spacing: 8) {
+                    formatButton(title: "B", symbol: "bold", wrap: "**")
+                    formatButton(title: "I", symbol: "italic", wrap: "*")
+                    formatButton(title: "H1", symbol: "number", prefix: "# ")
+                    formatButton(title: "H2", symbol: "number", prefix: "## ")
+                    formatButton(title: "Code", symbol: "chevron.left.forwardslash.chevron.right", wrap: "`")
+                    formatButton(title: "List", symbol: "list.bullet", prefix: "- ")
+                    formatButton(title: "Quote", symbol: "quote.opening", prefix: "> ")
+                    Spacer()
+                }
+                .padding(.horizontal, 36)
+            }
 
             Divider()
                 .padding(.horizontal, 36)
 
-            TextEditor(text: $draftBody)
-                .font(.system(size: 15))
-                .lineSpacing(6)
-                .padding(.horizontal, 36)
-                .scrollContentBackground(.hidden)
-                .onChange(of: draftBody) { _, newVal in
-                    guard let idx = noteIndex else { return }
-                    browserState.notes[idx].body = newVal
-                    browserState.notes[idx].updatedAt = Date()
-                    browserState.scheduleSave()
+            if isPreviewMode {
+                ScrollView {
+                    Text(LocalizedStringKey(draftBody.isEmpty ? "*Empty note*" : draftBody))
+                        .font(.system(size: 15))
+                        .lineSpacing(6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 36)
+                        .padding(.top, 8)
                 }
+            } else {
+                TextEditor(text: $draftBody)
+                    .font(.system(size: 15))
+                    .lineSpacing(6)
+                    .padding(.horizontal, 36)
+                    .scrollContentBackground(.hidden)
+                    .onChange(of: draftBody) { _, newVal in
+                        guard let idx = noteIndex else { return }
+                        browserState.notes[idx].body = newVal
+                        browserState.notes[idx].updatedAt = Date()
+                        browserState.scheduleSave()
+                    }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -245,6 +286,26 @@ public struct NoteEditorView: View {
                 draftBody = browserState.notes[idx].body
             }
         }
+    }
+
+    private func formatButton(title: String, symbol: String, wrap: String = "", prefix: String = "") -> some View {
+        Button {
+            if !wrap.isEmpty {
+                draftBody.append("\(wrap)text\(wrap)")
+            } else if !prefix.isEmpty {
+                draftBody.append("\n\(prefix)")
+            }
+            guard let idx = noteIndex else { return }
+            browserState.notes[idx].body = draftBody
+            browserState.notes[idx].updatedAt = Date()
+            browserState.scheduleSave()
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: .bold))
+                .frame(minWidth: 24, minHeight: 20)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 }
 

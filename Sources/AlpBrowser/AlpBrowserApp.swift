@@ -393,6 +393,17 @@ enum AlpWindowChrome {
     static func alignTrafficLights(in window: NSWindow) {
         guard window.styleMask.contains(.titled), !window.styleMask.contains(.fullScreen) else { return }
         let targetY = window.frame.height - AlpTopBarMetrics.centerY   // window coordinates, origin bottom-left
+        // Horizontal: move all three by the same amount so the close button lands on `trafficLightLeading`.
+        // The shift is computed from the close button's current x, so re-applying after AppKit's own layout is idempotent.
+        if let close = window.standardWindowButton(.closeButton) {
+            let shift = AlpTopBarMetrics.trafficLightLeading - close.frame.origin.x
+            if abs(shift) > 0.5 {
+                for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                    guard let button = window.standardWindowButton(type) else { continue }
+                    button.setFrameOrigin(NSPoint(x: button.frame.origin.x + shift, y: button.frame.origin.y))
+                }
+            }
+        }
         for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             guard let button = window.standardWindowButton(type), let container = button.superview else { continue }
             let currentY = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil).y

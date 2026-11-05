@@ -104,3 +104,40 @@ Nothing is `matched` yet where it needs a real Mac build; CI cannot run the UI.
   option to move the page into a space. (Arc help documentation.)
 - **Alp Browser:** `MiniAlpWindowController`, floating panel, "Expand to Space" menu; external http(s) links route here.
 - **Status:** needs-verification. Window size, auto-close behavior and the "Move to Space" wording unknown — needs owner screenshot.
+
+## 10. Top-bar navigation insets (run 19)
+
+- **Method (reference study, allowed by the run-18 rules update):** Arc's Swift layout constants are `static let CGFloat`s whose
+  getters return a literal. Their names survive in the Mach-O export trie of `Arc.app/Contents/MacOS/Arc`; the arm64 getter
+  code was decoded to read the literal. Nothing was copied — only numbers.
+- **Measured (Arc, pt):** sidebar-header constants `TopMargin` 4 · `topControlsLeadingMargin` 8 · `topControlsTrailingMargin` −6 ·
+  `topControlsToCommandBarSpacing` 2 · `windowControlsHoverWidth` 40 · `WindowTrafficLightRegionHoverWidth` 90 ·
+  `MinimalOuterEdgeHoverWidth` 50 · `GenerousOuterEdgeHoverWidth` 250. Little-window toolbar: `WindowControlsLeadingPadding` 5 ·
+  `ToolbarCloseButtonLeadingPadding` 4 · `BackButtonLeadingPadding` 8 · `ToolbarIconSize` 16 · `ToolbarControlMinDimension` 31 ·
+  `ToolbarWindowControlsURLFieldHorizontalPadding` 13. Shared button height 32.
+- **Interpretation (INFERRED — the constants' uses were not traced):** controls sit 4 pt below the window top in a 32 pt row, so the
+  shared centre line is 20 pt from the top (ours was 14). The 5 pt window-controls padding on top of the system's 7 pt puts the close
+  button 12 pt from the left edge. 8 pt separates the lights from the first control. −6 is read as a hit-area compensation, not a gap.
+- **Before (run 18):** centre line 14 pt, 26 pt icons → 1 pt above the icons; system-default traffic-light x (≈7 pt); first control 72 pt in.
+- **Now:** `AlpTopBarMetrics` — `topMargin` 4, `controlHeight` 32, `centerY` 20, `bandHeight` 40; traffic lights moved to x = 12
+  (`AlpWindowChrome.alignTrafficLights`, idempotent); `trafficLightInset` 74 (lights end at 66 + 8). Top inset of the icons 1 → 7 pt.
+- **Deviations from Arc:** (a) icon frame stays 26 pt (Arc's row is 32) so hover fills stay compact — the earlier "oversized buttons"
+  complaint; (b) the URL pill stays 42 pt from the top (Arc's 2 pt spacing would put it at 38) to avoid reflowing the sidebar;
+  (c) trailing inset of the cluster unchanged (8 pt), since the −6 constant could not be mapped to a visible gap.
+- **Status:** needs-verification on a Mac (CI cannot render; macOS 26 traffic-light geometry untested).
+
+## 11. Sidebar width limits (run 19)
+
+- **Measured (Arc, pt):** minimum **164** · maximum **500** · narrow-layout threshold **212** · collapse threshold **82**. Found as
+  literals in Arc's resize-gesture handler (`handleSidebarResizePanGestureRecognizer:`): the width is `max(w, 164)` capped at 500; at
+  drag end a width under 82 snaps to 0 (hidden). Arc's default width was NOT found; Alp keeps 296.
+- **Before:** Alp clamped 260…500 (`SidebarResizeHandle`). Max already matched.
+- **Now:** `AlpSidebarMetrics` (MainBrowserWindow.swift): min 164, max 500, narrow 212, default 296, library floor 330.
+- **Library floor:** kept at 330 (the Library cannot render narrower). While the Library is open the handle's lower limit is 330 and a
+  drag starts from the on-screen width, so there is no dead zone. Closing the Library returns to the stored width.
+- **Narrow layout (< 212), added so 164 cannot clip:** the back/forward/reload buttons fold into one "…" menu (the full row needs
+  ≈206 pt beside the lights); the bottom bar moves Settings into the "+" menu and the space switcher scrolls sideways when it does not
+  fit (it used to overlap the side buttons below ≈250 pt). The media mini-player domain line is single-line. URL pill and folder rows
+  already truncate.
+- **Known gap:** Arc hides the sidebar when dragged below 82; Alp clamps at 164 and does not collapse on drag.
+- **Status:** needs-verification on a Mac.

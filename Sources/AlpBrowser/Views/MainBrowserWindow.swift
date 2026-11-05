@@ -35,14 +35,17 @@ public struct MainBrowserWindow: View {
             // 2. Main Content Split Layout
             HStack(spacing: 0) {
                 if !browserState.isSidebarCollapsed {
-                    let currentWidth = browserState.isLibrarySheetPresented ? max(browserState.sidebarWidth, 330) : browserState.sidebarWidth
+                    let currentWidth = browserState.isLibrarySheetPresented ? max(browserState.sidebarWidth, AlpSidebarMetrics.libraryMinWidth) : browserState.sidebarWidth
                     SidebarView()
                         .frame(width: currentWidth)
                         .clipped()
                         .animation(.spring(response: 0.30, dampingFraction: 0.85), value: browserState.isLibrarySheetPresented)
                         .transition(.move(edge: .leading).combined(with: .opacity))
 
-                    SidebarResizeHandle(sidebarWidth: $browserState.sidebarWidth)
+                    SidebarResizeHandle(
+                        sidebarWidth: $browserState.sidebarWidth,
+                        minWidth: browserState.isLibrarySheetPresented ? AlpSidebarMetrics.libraryMinWidth : AlpSidebarMetrics.minWidth
+                    )
                 }
 
                 // Inset Web Viewport (Remains stationary; only the sidebar space slides)
@@ -313,16 +316,38 @@ public struct MainBrowserWindow: View {
 
 /// One shared vertical centre for everything in the top band: the system traffic lights
 /// (repositioned by `AlpWindowChrome`), the toggle/back/forward/reload icons and the URL pill.
+///
+/// Values follow the measurements in docs/ARC_BEHAVIOR_AUDIT.md §10: a 4 pt top margin above a 32 pt control
+/// row (centre 20 pt from the window top), traffic lights 12 pt from the left edge, and an 8 pt gap between the
+/// lights and the first control.
 enum AlpTopBarMetrics {
-    /// Height of the slim titlebar band.
-    static let bandHeight: CGFloat = 28
+    static let topMargin: CGFloat = 4
+    static let controlHeight: CGFloat = 32
     /// Distance from the window's top edge to the shared centre line.
-    static let centerY: CGFloat = bandHeight / 2
+    static let centerY: CGFloat = topMargin + controlHeight / 2
+    /// Height of the top band; its centre is `centerY`.
+    static let bandHeight: CGFloat = centerY * 2
+    /// The URL pill still starts 42 pt below the window top, as when the band was 28 pt; the row gives back this much.
+    static let bandOverlapBelow: CGFloat = bandHeight - 28
+    /// Visible button frame. Smaller than the 32 pt control row so hover/press fills stay compact.
     static let iconSize: CGFloat = 26
     static let iconGlyphSize: CGFloat = 13.5
     static let iconSpacing: CGFloat = 4
-    /// Horizontal space reserved for the traffic lights.
-    static let trafficLightInset: CGFloat = 72
+    /// Distance from the window's left edge to the close button.
+    static let trafficLightLeading: CGFloat = 12
+    /// Horizontal space reserved for the traffic lights (they end at 66 pt, plus the 8 pt gap).
+    static let trafficLightInset: CGFloat = 74
+}
+
+/// Sidebar width limits, as measured in Arc (docs/ARC_BEHAVIOR_AUDIT.md §11).
+enum AlpSidebarMetrics {
+    static let defaultWidth: CGFloat = 296
+    static let minWidth: CGFloat = 164
+    static let maxWidth: CGFloat = 500
+    /// Below this width the nav cluster folds into a menu and the bottom bar drops to its compact form.
+    static let narrowWidth: CGFloat = 212
+    /// The Library view needs this much room; it is shown at this width even if the sidebar is narrower.
+    static let libraryMinWidth: CGFloat = 330
 }
 
 /// A toolbar icon button on the shared top-bar geometry (same frame and glyph size everywhere).
@@ -518,8 +543,10 @@ public struct AlpSpaceBackgroundView: View {
 
 struct SidebarResizeHandle: View {
     @Binding var sidebarWidth: CGFloat
+    /// Lower drag limit; the Library view raises it because it cannot render any narrower.
+    var minWidth: CGFloat = AlpSidebarMetrics.minWidth
     @State private var isDragging = false
-    @State private var dragStartWidth: CGFloat = 296
+    @State private var dragStartWidth: CGFloat = AlpSidebarMetrics.defaultWidth
 
     var body: some View {
         ZStack {
@@ -549,10 +576,11 @@ struct SidebarResizeHandle: View {
                 .onChanged { value in
                     if !isDragging {
                         isDragging = true
-                        dragStartWidth = sidebarWidth
+                        // Start from the width actually on screen (the Library floor can exceed the stored one).
+                        dragStartWidth = max(sidebarWidth, minWidth)
                     }
                     let proposed = dragStartWidth + value.translation.width
-                    let clamped = min(max(proposed, 260), 500)
+                    let clamped = min(max(proposed, minWidth), AlpSidebarMetrics.maxWidth)
                     sidebarWidth = clamped
                 }
                 .onEnded { _ in

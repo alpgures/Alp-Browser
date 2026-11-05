@@ -136,22 +136,50 @@ public struct SidebarView: View {
 
             Spacer()
 
-            AlpTopBarIconButton(
-                symbol: "chevron.left", help: "Back (⌘[)", theme: theme,
-                isEnabled: browserState.canGoBackInActiveTab
-            ) { browserState.goBackInActiveTab() }
+            if isNarrowSidebar {
+                // Too narrow for three buttons beside the traffic lights: fold them into one menu.
+                Menu {
+                    Button("Back") { browserState.goBackInActiveTab() }
+                        .disabled(!browserState.canGoBackInActiveTab)
+                    Button("Forward") { browserState.goForwardInActiveTab() }
+                        .disabled(!browserState.canGoForwardInActiveTab)
+                    Button("Reload Page") { browserState.reloadActiveTab() }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: AlpTopBarMetrics.iconGlyphSize, weight: .medium))
+                        .foregroundStyle(theme.secondaryForegroundColor)
+                        .frame(width: AlpTopBarMetrics.iconSize, height: AlpTopBarMetrics.iconSize)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Back, Forward, Reload")
+            } else {
+                AlpTopBarIconButton(
+                    symbol: "chevron.left", help: "Back (⌘[)", theme: theme,
+                    isEnabled: browserState.canGoBackInActiveTab
+                ) { browserState.goBackInActiveTab() }
 
-            AlpTopBarIconButton(
-                symbol: "chevron.right", help: "Forward (⌘])", theme: theme,
-                isEnabled: browserState.canGoForwardInActiveTab
-            ) { browserState.goForwardInActiveTab() }
+                AlpTopBarIconButton(
+                    symbol: "chevron.right", help: "Forward (⌘])", theme: theme,
+                    isEnabled: browserState.canGoForwardInActiveTab
+                ) { browserState.goForwardInActiveTab() }
 
-            AlpTopBarIconButton(symbol: "arrow.clockwise", help: "Reload Page (⌘R)", theme: theme) {
-                browserState.reloadActiveTab()
+                AlpTopBarIconButton(symbol: "arrow.clockwise", help: "Reload Page (⌘R)", theme: theme) {
+                    browserState.reloadActiveTab()
+                }
             }
         }
         .frame(height: AlpTopBarMetrics.bandHeight)
         .frame(maxWidth: .infinity)
+        // The band is taller than the old 28 pt one so the controls sit lower; the pill below keeps its place.
+        .padding(.bottom, -AlpTopBarMetrics.bandOverlapBelow)
+    }
+
+    /// True below Arc's narrow-sidebar width, where the top row and bottom bar use their compact forms.
+    private var isNarrowSidebar: Bool {
+        browserState.sidebarWidth < AlpSidebarMetrics.narrowWidth
     }
 
     // MARK: - 2. Clean URL Command Pill with Hover "..." Button
@@ -277,6 +305,7 @@ public struct SidebarView: View {
                 Text(tab.simplifiedDomain)
                     .font(.system(size: 9.5))
                     .foregroundStyle(theme.secondaryForegroundColor)
+                    .lineLimit(1)
             }
 
             Spacer()
@@ -314,36 +343,9 @@ public struct SidebarView: View {
     private var bottomSpaceSwitcherBar: some View {
         ZStack {
             // Centre: space switcher
-            HStack(spacing: 8) {
-                ForEach(Array(browserState.spaces.enumerated()), id: \.element.id) { index, space in
-                    SpaceSwitcherIcon(
-                        space: space,
-                        isActive: browserState.activeSpaceID == space.id,
-                        theme: theme
-                    ) {
-                        withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
-                            browserState.switchToSpace(at: index)
-                        }
-                    }
-                    .contextMenu {
-                        Button("Rename Space…") {
-                            spaceNameDraft = space.title
-                            renamingSpaceID = space.id
-                        }
-                        Button("Edit Theme…") {
-                            browserState.switchToSpace(at: index)
-                            browserState.isThemePickerPresented = true
-                        }
-                        if browserState.spaces.count > 1 {
-                            Divider()
-                            Button("Delete Space…", role: .destructive) {
-                                spacePendingDeletion = space
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 76)
+            spaceSwitcher
+                // Clear of the side buttons: 44 pt covers the folder button or the "+" menu when narrow.
+                .padding(.horizontal, isNarrowSidebar ? 44 : 76)
 
             HStack(spacing: 6) {
                 // Leading: Library (folder)
@@ -360,22 +362,28 @@ public struct SidebarView: View {
                 .buttonStyle(AlpIconButtonStyle(theme: theme))
                 .help("Library")
 
-                // Leading: Settings (gearshape)
-                Button {
-                    browserState.isSettingsPresented = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 16, weight: .medium))
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
+                // Leading: Settings (gearshape). Narrow sidebars move it into the "+" menu.
+                if !isNarrowSidebar {
+                    Button {
+                        browserState.isSettingsPresented = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 16, weight: .medium))
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(AlpIconButtonStyle(theme: theme))
+                    .help("Settings (⌘,)")
                 }
-                .buttonStyle(AlpIconButtonStyle(theme: theme))
-                .help("Settings (⌘,)")
 
                 Spacer(minLength: 0)
 
                 // Trailing: "+ ⌵" (New Space / Folder / Easel / Note)
                 Menu {
+                    if isNarrowSidebar {
+                        Button("Settings…") { browserState.isSettingsPresented = true }
+                        Divider()
+                    }
                     Button("New Space") {
                         withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
                             _ = browserState.createSpace()
@@ -414,6 +422,51 @@ public struct SidebarView: View {
         }
         .frame(height: 40)
         .frame(maxWidth: .infinity)
+    }
+
+    /// The space icons. Narrow sidebars centre them when they fit and scroll them sideways when they do not.
+    @ViewBuilder
+    private var spaceSwitcher: some View {
+        if isNarrowSidebar {
+            ViewThatFits(in: .horizontal) {
+                spaceSwitcherIcons
+                ScrollView(.horizontal, showsIndicators: false) { spaceSwitcherIcons }
+            }
+        } else {
+            spaceSwitcherIcons
+        }
+    }
+
+    private var spaceSwitcherIcons: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(browserState.spaces.enumerated()), id: \.element.id) { index, space in
+                SpaceSwitcherIcon(
+                    space: space,
+                    isActive: browserState.activeSpaceID == space.id,
+                    theme: theme
+                ) {
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                        browserState.switchToSpace(at: index)
+                    }
+                }
+                .contextMenu {
+                    Button("Rename Space…") {
+                        spaceNameDraft = space.title
+                        renamingSpaceID = space.id
+                    }
+                    Button("Edit Theme…") {
+                        browserState.switchToSpace(at: index)
+                        browserState.isThemePickerPresented = true
+                    }
+                    if browserState.spaces.count > 1 {
+                        Divider()
+                        Button("Delete Space…", role: .destructive) {
+                            spacePendingDeletion = space
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

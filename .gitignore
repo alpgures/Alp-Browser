@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+*.swp
+*.bak
+*.old
+
+# App Bundles & Framework binaries (too large for git)
+*.app/
+*.framework/
+*.dylib
+
+# Swift Package Manager & Build
+.build/
+.swiftpm/
+
+# Logs & temp
+/tmp/
+*.log

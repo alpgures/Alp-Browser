@@ -16,7 +16,6 @@ public final class WebViewPool: NSObject, ObservableObject {
     public static let shared = WebViewPool()
 
     @Published public private(set) var liveWebViewCount: Int = 0
-    @Published public private(set) var snapshots: [UUID: NSImage] = [:]
     @Published public var isZapperModeActive: Bool = false
     @Published public var hoveredLinkURL: String?
 
@@ -35,6 +34,11 @@ public final class WebViewPool: NSObject, ObservableObject {
 
     public func hasLiveWebView(for tabID: UUID) -> Bool {
         webViews[tabID] != nil
+    }
+
+    /// Ids of tabs that currently own a live WKWebView (everything else is hibernated or never loaded).
+    public var liveTabIDs: [UUID] {
+        Array(webViews.keys)
     }
 
     public func existingWebView(for tabID: UUID) -> WKWebView? {
@@ -82,12 +86,7 @@ public final class WebViewPool: NSObject, ObservableObject {
         coordinators[tab.id] = coordinator
         userContentController.add(coordinator, name: "alpBridge")
 
-        let bridgeScript = WKUserScript(
-            source: Self.alpBridgeUserScriptSource,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: false
-        )
-        userContentController.addUserScript(bridgeScript)
+        installUserScripts(on: userContentController)
 
         config.userContentController = userContentController
 
@@ -107,6 +106,86 @@ public final class WebViewPool: NSObject, ObservableObject {
         }
 
         return wv
+    }
+
+    // MARK: - User Scripts (bridge + site boosts)
+
+    /// (Re)installs every user script on a content controller: the bridge, then the enabled boosts.
+    /// Boost CSS is injected at document start so styled pages never flash unstyled.
+    private func installUserScripts(on ucc: WKUserContentController) {
+        ucc.removeAllUserScripts()
+        ucc.addUserScript(WKUserScript(
+            source: Self.alpBridgeUserScriptSource,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: false
+        ))
+        for script in Self.boostUserScripts(for: browserState?.styles ?? []) {
+            ucc.addUserScript(script)
+        }
+    }
+
+    /// Pushes the current boosts to every live tab's user scripts and restyles the pages already loaded.
+    public func reapplyBoosts() {
+        for (tabID, wv) in webViews {
+            installUserScripts(on: wv.configuration.userContentController)
+            guard let host = wv.url?.host else { continue }
+            let match = browserState?.styles.first { $0.isEnabled && $0.matches(host: host) }
+            applyStyle(match, to: tabID)
+        }
+    }
+
+    private static func jsStringLiteral(_ value: String) -> String {
+        guard let data = try? JSONEncoder().encode([value]),
+              let json = String(data: data, encoding: .utf8) else { return "\"\"" }
+        return String(json.dropFirst().dropLast())
+    }
+
+    private static func hostMatchSnippet(domain: String) -> String {
+        """
+        var __alpHost = location.hostname.toLowerCase();
+        var __alpDomain = \(jsStringLiteral(domain.lowercased()));
+        if (__alpHost !== __alpDomain && !__alpHost.endsWith('.' + __alpDomain)) return;
+        """
+    }
+
+    private static func boostUserScripts(for styles: [PageMod]) -> [WKUserScript] {
+        var scripts: [WKUserScript] = []
+        for style in styles where style.isEnabled {
+            let css = style.compiledCSS
+            if !css.isEmpty {
+                let source = """
+                (function() {
+                    \(hostMatchSnippet(domain: style.domain))
+                    var el = document.createElement('style');
+                    el.id = 'alp-page-mod-style';
+                    el.textContent = \(jsStringLiteral(css));
+                    function put() {
+                        var parent = document.head || document.documentElement;
+                        if (!parent) return false;
+                        parent.appendChild(el);
+                        return true;
+                    }
+                    if (!put()) document.addEventListener('DOMContentLoaded', put);
+                })();
+                """
+                scripts.append(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            }
+            let js = style.customJS.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !js.isEmpty {
+                // Embedded directly (not eval'd) so strict page CSPs cannot block it; one script per
+                // boost so a syntax error in one never disables the others.
+                let source = """
+                (function() {
+                    \(hostMatchSnippet(domain: style.domain))
+                    try {
+                    \(js)
+                    } catch (e) { console.error('Alp boost script error', e); }
+                })();
+                """
+                scripts.append(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+            }
+        }
+        return scripts
     }
 
     public func recordNavigation(in tabID: UUID, from oldURL: String?, to newURL: String) {
@@ -175,15 +254,13 @@ public final class WebViewPool: NSObject, ObservableObject {
         }
     }
 
+    /// One-off page snapshot for the caller (screenshot-to-canvas / clipboard). Deliberately not
+    /// cached: a retained bitmap per tab would defeat hibernation's "0 MB" goal.
     public func captureSnapshot(for tabID: UUID) async -> NSImage? {
-        guard let wv = webViews[tabID] else { return snapshots[tabID] }
+        guard let wv = webViews[tabID] else { return nil }
         let config = WKSnapshotConfiguration()
         config.snapshotWidth = 720
-        if let image = try? await wv.takeSnapshot(configuration: config) {
-            snapshots[tabID] = image
-            return image
-        }
-        return snapshots[tabID]
+        return try? await wv.takeSnapshot(configuration: config)
     }
 
     public func toggleMuteAudio(in tabID: UUID, muted: Bool) {
@@ -204,49 +281,62 @@ public final class WebViewPool: NSObject, ObservableObject {
 
     // MARK: - Zero-RAM Tab Hibernation
 
-    public func hibernateTab(id tabID: UUID) async {
-        guard webViews[tabID] != nil else { return }
-        _ = await captureSnapshot(for: tabID)
+    /// Releases the tab's WKWebView (and with it the web content process once nothing else shares it).
+    /// Nothing is kept in memory for the tab: no snapshot, no view, no coordinator. Only the tab's
+    /// URL and back/forward URL stacks (a few strings) remain, so selecting it reloads the page.
+    public func hibernateTab(id tabID: UUID) {
         destroyWebView(for: tabID)
+    }
+
+    /// Forgets everything the pool keeps for a tab that is gone for good (closed, archived, deleted).
+    public func forgetTab(_ tabID: UUID) {
+        backHistoryStacks.removeValue(forKey: tabID)
+        forwardHistoryStacks.removeValue(forKey: tabID)
     }
 
     public func destroyWebView(for tabID: UUID) {
         guard let wv = webViews.removeValue(forKey: tabID) else { return }
+        let ucc = wv.configuration.userContentController
         wv.stopLoading()
-        wv.configuration.userContentController.removeScriptMessageHandler(forName: "alpBridge")
-        wv.configuration.userContentController.removeAllUserScripts()
+        // The content controller retains its script message handler; break that link explicitly.
+        ucc.removeScriptMessageHandler(forName: "alpBridge")
+        ucc.removeAllUserScripts()
+        ucc.removeAllContentRuleLists()
         wv.navigationDelegate = nil
         wv.uiDelegate = nil
-        wv.loadHTMLString("", baseURL: nil)
+        // A view still parented in a container would keep the web view alive.
+        wv.removeFromSuperview()
         coordinators.removeValue(forKey: tabID)
         liveWebViewCount = webViews.count
+        if isZapperModeActive { isZapperModeActive = false }
     }
 
     // MARK: - Page Styles & Element Zapper
 
+    /// Live-updates the boost stylesheet on an open tab (CSS only; boost scripts run via
+    /// `runBoostScript` or on the next load).
     public func applyStyle(_ style: PageMod?, to tabID: UUID) {
         guard let wv = webViews[tabID] else { return }
         let css = (style?.isEnabled == true) ? style!.compiledCSS : ""
-        let customJS = (style?.isEnabled == true) ? style!.customJS : ""
-
-        let encodedCSS = css
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "`", with: "\\`")
-            .replacingOccurrences(of: "$", with: "\\$")
-
         let js = """
         (function() {
-            let styleEl = document.getElementById('alp-page-mod-style');
+            var styleEl = document.getElementById('alp-page-mod-style');
             if (!styleEl) {
                 styleEl = document.createElement('style');
                 styleEl.id = 'alp-page-mod-style';
                 (document.head || document.documentElement).appendChild(styleEl);
             }
-            styleEl.textContent = `\(encodedCSS)`;
+            styleEl.textContent = \(Self.jsStringLiteral(css));
         })();
-        \(customJS)
         """
         wv.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    /// Runs a boost's custom script once on an open tab (the "Run" button in the Boost editor).
+    public func runBoostScript(_ source: String, in tabID: UUID) {
+        guard let wv = webViews[tabID] else { return }
+        let wrapped = "(function(){ try {\n\(source)\n} catch (e) { console.error('Alp boost script error', e); } })();"
+        wv.evaluateJavaScript(wrapped, completionHandler: nil)
     }
 
     public func setElementZapperActive(_ active: Bool, for tabID: UUID) {
@@ -280,43 +370,51 @@ public final class WebViewPool: NSObject, ObservableObject {
 
     // MARK: - Ad & Tracker Blocker
 
+    /// Bump the version suffix whenever the rule set changes; the compiled list is cached on disk by identifier.
+    private static let adBlockRuleListID = "AlpBrowserNativeAdBlocker.v2"
+    private static let legacyAdBlockRuleListIDs = ["AlpBrowserNativeAdBlocker"]
+
     private func compileAdBlockerRules() {
-        let rulesJSON = """
-        [
-            {
-                "trigger": {
-                    "url-filter": ".*",
-                    "if-domain": [
-                        "*doubleclick.net",
-                        "*googlesyndication.com",
-                        "*google-analytics.com",
-                        "*googletagmanager.com",
-                        "*adnxs.com",
-                        "*taboola.com",
-                        "*outbrain.com",
-                        "*criteo.com",
-                        "*scorecardresearch.com",
-                        "*amazon-adsystem.com"
-                    ]
-                },
-                "action": { "type": "block" }
-            },
-            {
-                "trigger": {
-                    "url-filter": "(doubleclick\\\\.net|googlesyndication\\\\.com|google-analytics\\\\.com|adservice\\\\.google\\\\.com|connect\\\\.facebook\\\\.net/en_US/fbevents\\\\.js|pagead2\\\\.googlesyndication\\\\.com)"
-                },
-                "action": { "type": "block" }
+        let store = WKContentRuleListStore.default()
+        for legacyID in Self.legacyAdBlockRuleListIDs {
+            store?.removeContentRuleList(forIdentifier: legacyID) { _ in }
+        }
+        // Reuse the on-disk compiled list when present; compile (once per rule-set version) otherwise.
+        store?.lookUpContentRuleList(forIdentifier: Self.adBlockRuleListID) { [weak self] existing, _ in
+            if let existing = existing {
+                Task { @MainActor in self?.adoptRuleList(existing) }
+                return
             }
-        ]
-        """
-        WKContentRuleListStore.default().compileContentRuleList(
-            forIdentifier: "AlpBrowserNativeAdBlocker",
-            encodedContentRuleList: rulesJSON
-        ) { [weak self] list, _ in
-            guard let list = list else { return }
-            Task { @MainActor in
-                self?.compiledContentRuleList = list
+            guard let json = AdBlockRules.json() else { return }
+            WKContentRuleListStore.default().compileContentRuleList(
+                forIdentifier: Self.adBlockRuleListID,
+                encodedContentRuleList: json
+            ) { list, error in
+                if let error = error {
+                    NSLog("Alp ad blocker rule compile failed: %@", String(describing: error))
+                    return
+                }
+                guard let list = list else { return }
+                Task { @MainActor in self?.adoptRuleList(list) }
             }
+        }
+    }
+
+    private func adoptRuleList(_ list: WKContentRuleList) {
+        compiledContentRuleList = list
+        // Tabs created before compilation finished get the list now.
+        guard browserState?.adBlockerEnabled ?? true else { return }
+        for wv in webViews.values {
+            wv.configuration.userContentController.add(list)
+        }
+    }
+
+    /// Applies the Settings toggle to already-open tabs. Pages need a reload to pick up the change.
+    public func setAdBlockerEnabled(_ enabled: Bool) {
+        guard let list = compiledContentRuleList else { return }
+        for wv in webViews.values {
+            let ucc = wv.configuration.userContentController
+            if enabled { ucc.add(list) } else { ucc.remove(list) }
         }
     }
 
@@ -510,17 +608,6 @@ final class WebViewInstanceCoordinator: NSObject, WKNavigationDelegate, WKUIDele
                 tab.urlString = currentURL
             }
         }
-
-        if let host = webView.url?.host {
-            let activeStyle = pool?.browserState?.styles.first(where: {
-                $0.isEnabled && host.contains($0.domain)
-            })
-            pool?.applyStyle(activeStyle, to: tabID)
-        }
-
-        Task {
-            _ = await pool?.captureSnapshot(for: tabID)
-        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -581,14 +668,17 @@ final class WebViewInstanceCoordinator: NSObject, WKNavigationDelegate, WKUIDele
         }
 
         pool?.browserState?.showToast("Downloading \(destURL.lastPathComponent)...")
+        DownloadTracker.shared.begin(download, destination: destURL)
         completionHandler(destURL)
     }
 
     func downloadDidFinish(_ download: WKDownload) {
+        DownloadTracker.shared.end(download)
         pool?.browserState?.showToast("Download completed to ~/Downloads")
     }
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        DownloadTracker.shared.end(download)
         pool?.browserState?.showToast("Download failed: \(error.localizedDescription)")
     }
 }

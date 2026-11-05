@@ -140,6 +140,7 @@ public struct MainBrowserWindow: View {
             // 5. Quick Peek Modal
             if let peek = browserState.peekSession {
                 PeekOverlayView(session: peek)
+                    .id(peek.id)   // a new peek must rebuild the overlay, not reuse the old page's state
                     .transition(.scale(scale: 0.95).combined(with: .opacity))
             }
 
@@ -224,11 +225,7 @@ public struct MainBrowserWindow: View {
                         )
                         .frame(width: leftWidth)
 
-                        SplitDividerView(isHorizontal: true) { delta in
-                            let newLeft = leftWidth + delta
-                            let newRatio = max(0.2, min(0.8, newLeft / availableWidth))
-                            browserState.splitRatio = newRatio
-                        }
+                        SplitDividerView(isHorizontal: true, ratio: $browserState.splitRatio, extent: availableWidth)
 
                         ViewportPaneView(
                             tab: tabs[1],
@@ -251,11 +248,7 @@ public struct MainBrowserWindow: View {
                         )
                         .frame(height: topHeight)
 
-                        SplitDividerView(isHorizontal: false) { delta in
-                            let newTop = topHeight + delta
-                            let newRatio = max(0.2, min(0.8, newTop / availableHeight))
-                            browserState.splitRatio = newRatio
-                        }
+                        SplitDividerView(isHorizontal: false, ratio: $browserState.splitRatio, extent: availableHeight)
 
                         ViewportPaneView(
                             tab: tabs[1],
@@ -267,27 +260,10 @@ public struct MainBrowserWindow: View {
                 }
             }
         } else if tabs.count > 2 {
-            if browserState.activeSpace.splitOrientation == .horizontal {
-                HStack(spacing: 6) {
-                    ForEach(tabs) { tab in
-                        ViewportPaneView(
-                            tab: tab,
-                            isSplitMode: true,
-                            isFocusedPane: browserState.activeTabID == tab.id
-                        )
-                    }
-                }
-            } else {
-                VStack(spacing: 6) {
-                    ForEach(tabs) { tab in
-                        ViewportPaneView(
-                            tab: tab,
-                            isSplitMode: true,
-                            isFocusedPane: browserState.activeTabID == tab.id
-                        )
-                    }
-                }
-            }
+            MultiPaneSplitView(
+                tabs: tabs,
+                isHorizontal: browserState.activeSpace.splitOrientation == .horizontal
+            )
         } else if let singleTab = tabs.first ?? browserState.activeTab {
             ViewportPaneView(
                 tab: singleTab,
@@ -304,11 +280,20 @@ public struct MainBrowserWindow: View {
 
 struct SplitDividerView: View {
     let isHorizontal: Bool
-    let onDrag: (CGFloat) -> Void
+    /// Share of `extent` given to the first pane, kept within `range`.
+    @Binding var ratio: CGFloat
+    /// Length along the drag axis that the ratio is measured against (the space the two panes share).
+    let extent: CGFloat
+    var range: ClosedRange<CGFloat> = 0.2...0.8
+    /// Called when a drag ends or the divider is reset (the 2-pane default persists `splitRatio`).
+    var onCommit: () -> Void = { BrowserState.shared.scheduleSave() }
 
     @State private var isHovered = false
     @State private var isDragging = false
-    @State private var dragStartOffset: CGFloat = 0
+    @State private var cursorPushed = false
+    /// Ratio when the current drag began; the drag is applied to this, not accumulated per event,
+    /// so a skipped or coalesced event can never lose movement.
+    @State private var startRatio: CGFloat?
 
     var body: some View {
         ZStack {
@@ -326,32 +311,117 @@ struct SplitDividerView: View {
         .frame(width: isHorizontal ? 8 : nil, height: isHorizontal ? nil : 8)
         .onHover { hovering in
             isHovered = hovering
-            if hovering || isDragging {
-                if isHorizontal {
-                    NSCursor.resizeLeftRight.push()
-                } else {
-                    NSCursor.resizeUpDown.push()
-                }
-            } else {
-                NSCursor.pop()
-            }
+            if hovering { pushCursor() } else if !isDragging { popCursor() }
+        }
+        .onDisappear { popCursor() }
+        .onTapGesture(count: 2) {
+            // Double-click resets to an even split.
+            ratio = min(range.upperBound, max(range.lowerBound, 0.5))
+            onCommit()
         }
         .gesture(
             DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in
-                    if !isDragging {
+                    guard extent > 0 else { return }
+                    if startRatio == nil {
+                        startRatio = ratio
                         isDragging = true
-                        dragStartOffset = 0
                     }
-                    let current = isHorizontal ? value.translation.width : value.translation.height
-                    let delta = current - dragStartOffset
-                    dragStartOffset = current
-                    onDrag(delta)
+                    let travelled = isHorizontal ? value.translation.width : value.translation.height
+                    ratio = max(range.lowerBound, min(range.upperBound, (startRatio ?? ratio) + travelled / extent))
                 }
                 .onEnded { _ in
+                    startRatio = nil
                     isDragging = false
-                    BrowserState.shared.scheduleSave()
+                    if !isHovered { popCursor() }
+                    onCommit()
                 }
+        )
+        .help("Drag to resize, double-click to reset")
+    }
+
+    private func pushCursor() {
+        guard !cursorPushed else { return }
+        cursorPushed = true
+        (isHorizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push()
+    }
+
+    private func popCursor() {
+        guard cursorPushed else { return }
+        cursorPushed = false
+        NSCursor.pop()
+    }
+}
+
+// MARK: - Split View with 3 or 4 Panes
+
+/// Lays out three or four panes with a draggable divider between every adjacent pair. Dragging a divider
+/// moves space between its two neighbours only. Sizes live in `@State` while dragging (so the whole app
+/// is not re-rendered per mouse event) and are written to the space when the drag ends.
+struct MultiPaneSplitView: View {
+    @EnvironmentObject var browserState: BrowserState
+    let tabs: [TabItem]
+    let isHorizontal: Bool
+
+    @State private var liveFractions: [Double]?
+
+    private let dividerThickness: CGFloat = 8
+
+    private var fractions: [Double] {
+        SplitPaneLayout.normalized(liveFractions ?? browserState.activeSpace.splitFractions, count: tabs.count)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let total = isHorizontal ? geo.size.width : geo.size.height
+            let extent = max(1, total - dividerThickness * CGFloat(tabs.count - 1))
+            let sizes = fractions
+            if isHorizontal {
+                HStack(spacing: 0) { paneRow(sizes: sizes, extent: extent) }
+            } else {
+                VStack(spacing: 0) { paneRow(sizes: sizes, extent: extent) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func paneRow(sizes: [Double], extent: CGFloat) -> some View {
+        ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
+            ViewportPaneView(
+                tab: tab,
+                isSplitMode: true,
+                isFocusedPane: browserState.activeTabID == tab.id
+            )
+            .frame(
+                width: isHorizontal ? extent * CGFloat(sizes[index]) : nil,
+                height: isHorizontal ? nil : extent * CGFloat(sizes[index])
+            )
+
+            if index < tabs.count - 1 {
+                divider(after: index, sizes: sizes, extent: extent)
+            }
+        }
+    }
+
+    private func divider(after index: Int, sizes: [Double], extent: CGFloat) -> some View {
+        let pairShare = SplitPaneLayout.pairShare(sizes, boundary: index)
+        let pairExtent = extent * CGFloat(sizes[index] + sizes[index + 1])
+        let allowed = SplitPaneLayout.pairShareRange(sizes, boundary: index)
+        return SplitDividerView(
+            isHorizontal: isHorizontal,
+            ratio: Binding(
+                get: { CGFloat(pairShare) },
+                set: { newShare in
+                    // Always resize from the sizes at the start of this render, so a drag never compounds.
+                    liveFractions = SplitPaneLayout.settingPairShare(sizes, boundary: index, share: Double(newShare))
+                }
+            ),
+            extent: pairExtent,
+            range: CGFloat(allowed.lowerBound)...CGFloat(allowed.upperBound),
+            onCommit: {
+                if let live = liveFractions { browserState.setSplitFractions(live) }
+                liveFractions = nil
+            }
         )
     }
 }

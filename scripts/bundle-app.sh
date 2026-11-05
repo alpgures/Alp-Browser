@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-PROJECT_DIR="/Users/alpgures/Documents/antigravity/arc2.0"
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="Alp Browser"
 APP_BUNDLE="${PROJECT_DIR}/${APP_NAME}.app"
 CONTENTS_DIR="${APP_BUNDLE}/Contents"
@@ -19,6 +19,7 @@ cp "${PROJECT_DIR}/Icons/alp_browser_original.icns" "${RESOURCES_DIR}/AppIcon.ic
 cp "${PROJECT_DIR}/Icons/alp_browser_original.icns" "${RESOURCES_DIR}/alp_browser_original.icns"
 cp "${PROJECT_DIR}/Icons/alp_browser_white.icns" "${RESOURCES_DIR}/alp_browser_white.icns"
 cp "${PROJECT_DIR}/Icons/alp_mountain_mask.png" "${RESOURCES_DIR}/alp_mountain_mask.png"
+cp "${PROJECT_DIR}/Server/alp_cloud_daemon.py" "${RESOURCES_DIR}/alp_cloud_daemon.py"
 
 SDK_PATH="$(xcrun --show-sdk-path)"
 swiftc -O \

@@ -436,11 +436,6 @@ public struct TabItem: Identifiable, Codable, Equatable, Hashable, Sendable {
         urlString.lowercased().hasPrefix("https://")
     }
 
-    public var faviconURL: URL? {
-        guard kind == .web, let url = URL(string: urlString), let host = url.host else { return nil }
-        return URL(string: "https://www.google.com/s2/favicons?domain=\(host)&sz=64")
-    }
-
     private func normalizeURL(_ raw: String) -> String {
         var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") {
@@ -509,6 +504,9 @@ public struct AlpSpace: Identifiable, Codable, Equatable, Hashable, Sendable {
     public var activeTabID: UUID?
     public var splitPaneTabIDs: [UUID]
     public var splitOrientation: SplitOrientation
+    /// Pane sizes (fractions summing to 1) for a 3- or 4-pane split. nil means an even split. Optional so
+    /// stores written before this field existed still decode; ignored unless its count matches the panes.
+    public var splitFractions: [Double]?
 
     public init(
         id: UUID = UUID(),
@@ -521,7 +519,8 @@ public struct AlpSpace: Identifiable, Codable, Equatable, Hashable, Sendable {
         todayTabs: [TabItem] = [],
         activeTabID: UUID? = nil,
         splitPaneTabIDs: [UUID] = [],
-        splitOrientation: SplitOrientation = .horizontal
+        splitOrientation: SplitOrientation = .horizontal,
+        splitFractions: [Double]? = nil
     ) {
         self.id = id
         self.originalArcID = originalArcID
@@ -534,6 +533,7 @@ public struct AlpSpace: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.activeTabID = activeTabID
         self.splitPaneTabIDs = splitPaneTabIDs
         self.splitOrientation = splitOrientation
+        self.splitFractions = splitFractions
     }
 
     public var allPinnedTabs: [TabItem] {
@@ -599,6 +599,13 @@ public struct PageMod: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.customCSS = customCSS
         self.customJS = customJS
         self.updatedAt = updatedAt
+    }
+
+    /// True when `host` is this boost's domain or one of its subdomains.
+    public func matches(host: String) -> Bool {
+        let h = host.lowercased()
+        let d = domain.lowercased()
+        return h == d || h.hasSuffix("." + d)
     }
 
     public var compiledCSS: String {
@@ -852,6 +859,7 @@ public struct PersistedBrowserStore: Codable {
     public var selectedIconName: String
     public var customIconConfig: CustomIconConfig
     public var sidebarWidth: Double
+    public var splitRatio: Double
 
     public init(
         spaces: [AlpSpace] = [],
@@ -868,7 +876,8 @@ public struct PersistedBrowserStore: Codable {
         hasImportedFromArc: Bool = false,
         selectedIconName: String = "alp_browser_original",
         customIconConfig: CustomIconConfig = CustomIconConfig(),
-        sidebarWidth: Double = 256.0
+        sidebarWidth: Double = 256.0,
+        splitRatio: Double = 0.5
     ) {
         self.spaces = spaces
         self.favorites = favorites
@@ -885,12 +894,13 @@ public struct PersistedBrowserStore: Codable {
         self.selectedIconName = selectedIconName
         self.customIconConfig = customIconConfig
         self.sidebarWidth = sidebarWidth
+        self.splitRatio = splitRatio
     }
 
     enum CodingKeys: String, CodingKey {
         case spaces, favorites, activeSpaceID, styles, canvases, notes, archivedTabs
         case autoArchiveHours, autoHibernateMinutes, adBlockerEnabled, syncConfig, hasImportedFromArc, selectedIconName
-        case customIconConfig, sidebarWidth
+        case customIconConfig, sidebarWidth, splitRatio
     }
 
     public init(from decoder: Decoder) throws {
@@ -910,5 +920,7 @@ public struct PersistedBrowserStore: Codable {
         self.selectedIconName = try container.decodeIfPresent(String.self, forKey: .selectedIconName) ?? "alp_browser_original"
         self.customIconConfig = try container.decodeIfPresent(CustomIconConfig.self, forKey: .customIconConfig) ?? CustomIconConfig()
         self.sidebarWidth = try container.decodeIfPresent(Double.self, forKey: .sidebarWidth) ?? 256.0
+        let ratio = try container.decodeIfPresent(Double.self, forKey: .splitRatio) ?? 0.5
+        self.splitRatio = min(0.8, max(0.2, ratio))
     }
 }

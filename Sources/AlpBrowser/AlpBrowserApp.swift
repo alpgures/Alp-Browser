@@ -115,6 +115,65 @@ public struct AlpBrowserApp: App {
                 }
                 .keyboardShortcut("-", modifiers: [.control, .shift])
 
+                Button("Exit Split View") {
+                    browserState.closeSplitView()
+                }
+                .disabled(!browserState.isSplitActive)
+
+                Button("Switch Split View Direction") {
+                    browserState.toggleSplitOrientation()
+                }
+                .keyboardShortcut("\\", modifiers: [.control, .shift])
+                .disabled(!browserState.isSplitActive)
+
+                Button("Grow Focused Split Pane") {
+                    browserState.resizeFocusedSplitPane(grow: true)
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [.control, .option])
+                .disabled(!browserState.isSplitActive)
+
+                Button("Shrink Focused Split Pane") {
+                    browserState.resizeFocusedSplitPane(grow: false)
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [.control, .option])
+                .disabled(!browserState.isSplitActive)
+
+                Button("Grow Focused Split Pane (Up)") {
+                    browserState.resizeFocusedSplitPane(grow: true)
+                }
+                .keyboardShortcut(.upArrow, modifiers: [.control, .option])
+                .disabled(!browserState.isSplitActive)
+
+                Button("Shrink Focused Split Pane (Down)") {
+                    browserState.resizeFocusedSplitPane(grow: false)
+                }
+                .keyboardShortcut(.downArrow, modifiers: [.control, .option])
+                .disabled(!browserState.isSplitActive)
+
+                Button("Move Focused Split Pane Forward") {
+                    browserState.moveFocusedSplitPane(forward: true)
+                }
+                .keyboardShortcut("]", modifiers: [.control, .command])
+                .disabled(!browserState.isSplitActive)
+
+                Button("Move Focused Split Pane Backward") {
+                    browserState.moveFocusedSplitPane(forward: false)
+                }
+                .keyboardShortcut("[", modifiers: [.control, .command])
+                .disabled(!browserState.isSplitActive)
+
+                Button("Focus Next Split Pane") {
+                    browserState.focusSplitPane(forward: true)
+                }
+                .keyboardShortcut("]", modifiers: [.command, .option])
+                .disabled(!browserState.isSplitActive)
+
+                Button("Focus Previous Split Pane") {
+                    browserState.focusSplitPane(forward: false)
+                }
+                .keyboardShortcut("[", modifiers: [.command, .option])
+                .disabled(!browserState.isSplitActive)
+
                 Divider()
 
                 Button("Find in Page") {
@@ -221,10 +280,7 @@ public final class AlpAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelega
                 NSApp.applicationIconImage = customImg
             }
         } else {
-            let iconPath = Bundle.main.path(forResource: iconName, ofType: "icns")
-                ?? "/Users/alpgures/Documents/antigravity/arc2.0/Icons/\(iconName).icns"
-            if FileManager.default.fileExists(atPath: iconPath),
-               let img = NSImage(contentsOfFile: iconPath) {
+            if let img = AlpIconGenerator.bundledIcon(named: iconName) {
                 NSApp.applicationIconImage = img
             }
         }
@@ -240,6 +296,17 @@ public final class AlpAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelega
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.setupApplicationMenu()
+            }
+        }
+    }
+
+    /// Links opened from other apps (when Alp is the default browser) land in the compact
+    /// Mini Alp window; alp:// links are routed to the main window as before.
+    public func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard let scheme = url.scheme?.lowercased() else { continue }
+            if scheme == "http" || scheme == "https" {
+                MiniAlpWindowController.shared.showWindow(initialURL: url.absoluteString)
             }
         }
     }
@@ -338,6 +405,7 @@ public final class MiniAlpWindowController {
     private var window: NSWindow?
 
     public func showWindow(initialURL: String = "https://www.google.com") {
+        window?.close()
         let contentView = MiniAlpView(initialURL: initialURL) { [weak self] in
             self?.window?.close()
         }
@@ -349,6 +417,7 @@ public final class MiniAlpWindowController {
             backing: .buffered,
             defer: false
         )
+        panel.isReleasedWhenClosed = false
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isFloatingPanel = true

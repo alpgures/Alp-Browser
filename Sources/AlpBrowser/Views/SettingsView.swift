@@ -15,6 +15,9 @@ public struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var selectedTab: SettingsTab = .general
+    @State private var webStoreInput: String = ""
+    @State private var confirmRestore = false
+    @State private var confirmReplaceCloud = false
 
     public enum SettingsTab: String, CaseIterable, Identifiable {
         case general = "General & Icons"
@@ -496,7 +499,7 @@ public struct SettingsView: View {
         }
     }
 
-    // MARK: - 2. Appearance Tab (Arc Space Style Editor)
+    // MARK: - 2. Appearance Tab (space style editor)
 
     private var appearanceTab: some View {
         SpaceThemeStudioView()
@@ -533,12 +536,19 @@ public struct SettingsView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     Circle()
-                        .fill(Color.green)
+                        .fill(browserState.syncProblem == nil ? Color.green : Color.orange)
                         .frame(width: 9, height: 9)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(cleanSyncHeadline)
                             .font(.system(size: 13, weight: .semibold))
+
+                        if let problem = browserState.syncProblem {
+                            Text(problem)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
 
                         if let lastSync = browserState.syncConfig.lastSyncedAt {
                             Text("Last updated \(lastSync.formatted(date: .abbreviated, time: .shortened))")
@@ -588,16 +598,48 @@ public struct SettingsView: View {
                 .controlSize(.regular)
 
                 Button {
-                    Task {
-                        await browserState.restoreVaultFromCloud()
-                    }
+                    confirmRestore = true
                 } label: {
                     Label("Restore from Backup", systemImage: "arrow.down.doc")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
 
+                if browserState.syncHasConflict {
+                    Button {
+                        confirmReplaceCloud = true
+                    } label: {
+                        Label("Replace Cloud Copy", systemImage: "icloud.and.arrow.up")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                } else if browserState.syncProblem != nil {
+                    Button {
+                        Task { await browserState.restoreVaultFromLocalBackup() }
+                    } label: {
+                        Label("Restore from This Mac", systemImage: "internaldrive")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                }
+
                 Spacer()
+            }
+            .confirmationDialog("Restore tabs and spaces from the backup?", isPresented: $confirmRestore, titleVisibility: .visible) {
+                Button("Restore", role: .destructive) {
+                    Task { await browserState.restoreVaultFromCloud() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This replaces the spaces, tabs, easels and notes on this Mac with the backup. A safety copy of what is here now is saved first.")
+            }
+            .confirmationDialog("Replace the cloud copy with this device?", isPresented: $confirmReplaceCloud, titleVisibility: .visible) {
+                Button("Replace Cloud Copy", role: .destructive) {
+                    Task { await browserState.syncNow(overwriteRemote: true) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Changes made on another device that are only in the cloud copy will be lost.")
             }
         }
     }
@@ -609,6 +651,9 @@ public struct SettingsView: View {
         }
         if raw.lowercased().contains("restoring") {
             return "Restoring Encrypted Vault…"
+        }
+        if browserState.syncProblem != nil {
+            return browserState.syncHasConflict ? "Sync Paused: Cloud Vault Changed" : "Saved on This Mac Only"
         }
         return "Encrypted Vault Active"
     }
@@ -622,7 +667,10 @@ public struct SettingsView: View {
 
             Toggle("Enable Native Bytecode Ad & Tracker Blocker", isOn: $browserState.adBlockerEnabled)
                 .font(.system(size: 12.5, weight: .medium))
-                .onChange(of: browserState.adBlockerEnabled) { _, _ in browserState.scheduleSave() }
+                .onChange(of: browserState.adBlockerEnabled) { _, enabled in
+                    WebViewPool.shared.setAdBlockerEnabled(enabled)
+                    browserState.scheduleSave()
+                }
 
             Text("Blocks known analytics scripts, cross-site trackers, and advertising telemetry via WKContentRuleList without slowing down page load performance.")
                 .font(.system(size: 11.5))
@@ -653,7 +701,17 @@ public struct SettingsView: View {
         }
     }
 
-    // MARK: - 5. Web Extensions Tab (With Automatic Arc Extension Import)
+    private func installFromWebStore() {
+        let input = webStoreInput
+        Task {
+            if await extensionManager.installFromWebStore(input) {
+                webStoreInput = ""
+                browserState.showToast("Extension installed")
+            }
+        }
+    }
+
+    // MARK: - 5. Web Extensions Tab (with automatic extension import)
 
     private var extensionsTab: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -686,6 +744,16 @@ public struct SettingsView: View {
                         .font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(.borderedProminent)
+            }
+
+            HStack(spacing: 8) {
+                TextField("Chrome Web Store link or extension ID", text: $webStoreInput)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+                    .onSubmit { installFromWebStore() }
+                Button("Install") { installFromWebStore() }
+                    .buttonStyle(.bordered)
+                    .disabled(webStoreInput.trimmingCharacters(in: .whitespaces).isEmpty || extensionManager.isExtensionLoading)
             }
 
             if let errorMsg = extensionManager.lastErrorMessage {
@@ -860,9 +928,7 @@ struct IconChoiceCard: View {
         if let customImage = customImage {
             return customImage
         }
-        let path = Bundle.main.path(forResource: iconName, ofType: "icns")
-            ?? "/Users/alpgures/Documents/antigravity/arc2.0/Icons/\(iconName).icns"
-        if let img = NSImage(contentsOfFile: path) {
+        if let img = AlpIconGenerator.bundledIcon(named: iconName) {
             return img
         }
         return NSApp.applicationIconImage ?? NSImage()

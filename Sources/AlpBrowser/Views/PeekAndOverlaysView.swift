@@ -9,18 +9,56 @@
 import SwiftUI
 import WebKit
 import AppKit
+import Combine
 
 // MARK: - 1. Quick Peek Modal Card (Shift+Click Link Preview)
+
+/// Mirrors the peek web view's load state. The peek tab is not part of the browser's tab list, so
+/// the usual per-tab loading flags never reach it; this watches the web view directly.
+final class PeekPageState: ObservableObject {
+    @Published var title: String = ""
+    @Published var urlString: String = ""
+    @Published var progress: Double = 0
+    @Published var isLoading: Bool = true
+
+    private var observers: [AnyCancellable] = []
+
+    func attach(_ webView: WKWebView) {
+        observers.removeAll()
+        observers = [
+            webView.publisher(for: \.estimatedProgress).receive(on: DispatchQueue.main).sink { [weak self] in self?.progress = $0 },
+            webView.publisher(for: \.isLoading).receive(on: DispatchQueue.main).sink { [weak self] in self?.isLoading = $0 },
+            webView.publisher(for: \.title).receive(on: DispatchQueue.main).sink { [weak self] in self?.title = $0 ?? "" },
+            webView.publisher(for: \.url).receive(on: DispatchQueue.main).sink { [weak self] in self?.urlString = $0?.absoluteString ?? "" }
+        ]
+    }
+
+    /// Drops the KVO subscriptions so the web view is not kept alive by the overlay.
+    func detach() {
+        observers.removeAll()
+    }
+}
 
 public struct PeekOverlayView: View {
     @EnvironmentObject var browserState: BrowserState
     public let session: PeekSession
 
     @State private var peekTab: TabItem
+    @StateObject private var page = PeekPageState()
 
     public init(session: PeekSession) {
         self.session = session
-        _peekTab = State(initialValue: TabItem(title: session.title, urlString: session.urlString))
+        // The tab id is the session id, so BrowserState can find the live peek web view.
+        _peekTab = State(initialValue: TabItem(id: session.id, title: session.title, urlString: session.urlString))
+    }
+
+    /// What the peek is showing now (it may have navigated since it opened).
+    private var currentURLString: String {
+        page.urlString.isEmpty ? peekTab.urlString : page.urlString
+    }
+
+    private var currentTitle: String {
+        page.title.isEmpty ? peekTab.title : page.title
     }
 
     public var body: some View {
@@ -45,7 +83,7 @@ public struct PeekOverlayView: View {
                         Text("•")
                             .foregroundStyle(.white.opacity(0.35))
 
-                        Text(peekTab.urlString)
+                        Text(currentURLString)
                             .font(.system(size: 11.5))
                             .foregroundStyle(.white.opacity(0.65))
                             .lineLimit(1)
@@ -55,7 +93,29 @@ public struct PeekOverlayView: View {
                     Spacer()
 
                     Button {
-                        let tab = browserState.openNewTab(urlString: peekTab.urlString, title: peekTab.title, inBackground: true)
+                        browserState.openPeekInNewWindow()
+                    } label: {
+                        Label("Open in New Window", systemImage: "macwindow.badge.plus")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Open in New Window")
+
+                    Button {
+                        browserState.copyPeekLink()
+                    } label: {
+                        Label("Copy Link", systemImage: "link")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Copy Link")
+
+                    Button {
+                        let tab = browserState.openNewTab(urlString: currentURLString, title: currentTitle, inBackground: true)
                         browserState.addSplitPane(withTabID: tab.id)
                         closePeek()
                     } label: {
@@ -88,6 +148,22 @@ public struct PeekOverlayView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(Color(red: 0.10, green: 0.10, blue: 0.13))
+                .contextMenu {
+                    Button("Open in New Window") { browserState.openPeekInNewWindow() }
+                    Button("Copy Link") { browserState.copyPeekLink() }
+                    Button("Expand to Full Tab") { browserState.expandPeekToFullTab() }
+                }
+                .overlay(alignment: .bottom) {
+                    if page.isLoading && page.progress < 1.0 {
+                        GeometryReader { geo in
+                            Rectangle()
+                                .fill(browserState.activeTheme.effectiveAccentColor)
+                                .frame(width: max(geo.size.width * CGFloat(page.progress), 24), height: 2)
+                                .animation(.easeOut(duration: 0.2), value: page.progress)
+                        }
+                        .frame(height: 2)
+                    }
+                }
 
                 WebViewRepresentable(tab: peekTab)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -105,12 +181,19 @@ public struct PeekOverlayView: View {
             .shadow(color: .black.opacity(0.6), radius: 36, y: 16)
             .padding(36)
         }
+        .onAppear {
+            // webView(for:) is idempotent; the representable below gets the same instance.
+            page.attach(WebViewPool.shared.webView(for: peekTab))
+        }
         .onDisappear {
+            page.detach()
             WebViewPool.shared.destroyWebView(for: peekTab.id)
+            WebViewPool.shared.forgetTab(peekTab.id)
         }
     }
 
     private func closePeek() {
+        page.detach()
         WebViewPool.shared.destroyWebView(for: peekTab.id)
         withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
             browserState.peekSession = nil
@@ -197,28 +280,33 @@ public struct FindBarView: View {
     }
 }
 
-// MARK: - 3. Page Style Studio (Alp Styles / Page Mods)
+// MARK: - 3. Boost Studio (per-site styles and scripts)
 
 public struct StyleStudioView: View {
     @EnvironmentObject var browserState: BrowserState
 
     @State private var activeStyle: PageMod
+    /// The last value written to the store; edits equal to it are not re-applied.
+    @State private var lastApplied: PageMod
 
     public init() {
-        _activeStyle = State(initialValue: PageMod(domain: "current", name: "Custom Style"))
+        let blank = PageMod(domain: "current", name: "Custom Boost")
+        _activeStyle = State(initialValue: blank)
+        _lastApplied = State(initialValue: blank)
     }
 
-    private var currentDomain: String {
-        guard let url = browserState.activeTab?.urlString, let host = URL(string: url)?.host else {
-            return "example.com"
-        }
+    private var activeWebHost: String? {
+        guard let tab = browserState.activeTab, tab.kind == .web,
+              let host = URL(string: tab.urlString)?.host else { return nil }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
+    private var currentDomain: String { activeWebHost ?? "" }
+
     public var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Page Style — \(currentDomain)", systemImage: "bolt.fill")
+                Label(activeWebHost.map { "Boost — \($0)" } ?? "Boost", systemImage: "bolt.fill")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
 
@@ -236,126 +324,97 @@ public struct StyleStudioView: View {
                 .buttonStyle(.plain)
             }
 
-            // Element Zapper Trigger
-            Button {
-                if let tabID = browserState.activeTabID {
-                    WebViewPool.shared.setElementZapperActive(true, for: tabID)
-                    browserState.isStyleStudioPresented = false
-                }
-            } label: {
-                HStack {
-                    Image(systemName: "scissors")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("Snip / Hide Element on Page")
-                        .font(.system(size: 12, weight: .medium))
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.blue.opacity(0.25))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.blue.opacity(0.5), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-
-            // Sliders for Brightness, Contrast, Saturation
-            VStack(spacing: 8) {
-                HStack {
-                    Text("Brightness")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.7))
-                    Slider(value: $activeStyle.brightness, in: 0.5...1.5)
-                        .onChange(of: activeStyle.brightness) { _, _ in applyLiveStyle() }
-                }
-                HStack {
-                    Text("Contrast")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.7))
-                    Slider(value: $activeStyle.contrast, in: 0.5...1.5)
-                        .onChange(of: activeStyle.contrast) { _, _ in applyLiveStyle() }
-                }
-                Toggle("Invert Colors", isOn: $activeStyle.invertColors)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .onChange(of: activeStyle.invertColors) { _, _ in applyLiveStyle() }
-            }
-
-            // Font Family Override
-            HStack {
-                Text("Font")
-                    .font(.system(size: 11))
+            if activeWebHost == nil {
+                Text("Open a web page to create a boost for that site.")
+                    .font(.system(size: 12))
                     .foregroundStyle(.white.opacity(0.7))
-                Spacer()
-                Picker("", selection: Binding(
-                    get: { activeStyle.fontFamily ?? "Default" },
-                    set: { newVal in
-                        activeStyle.fontFamily = newVal == "Default" ? nil : newVal
-                        applyLiveStyle()
-                    }
-                )) {
-                    Text("Default").tag("Default")
-                    Text("Georgia").tag("Georgia")
-                    Text("Menlo").tag("Menlo")
-                    Text("Palatino").tag("Palatino")
-                    Text("Courier").tag("Courier")
-                    Text("Comic Sans MS").tag("Comic Sans MS")
+                    .padding(.vertical, 8)
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    editor
                 }
-                .labelsHidden()
-                .controlSize(.small)
-            }
-
-            // Custom CSS Box
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Custom CSS")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
-
-                TextEditor(text: $activeStyle.customCSS)
-                    .font(.system(size: 11, design: .monospaced))
-                    .scrollContentBackground(.hidden)
-                    .background(Color.black.opacity(0.35))
-                    .frame(height: 70)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.15), lineWidth: 0.6))
-                    .onChange(of: activeStyle.customCSS) { _, _ in applyLiveStyle() }
+                .frame(maxHeight: 480)
             }
         }
         .padding(16)
-        .frame(width: 320)
+        .frame(width: 340)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(red: 0.12, green: 0.12, blue: 0.15))
         )
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.20), lineWidth: 1))
         .shadow(color: .black.opacity(0.5), radius: 24, y: 10)
-        .onAppear {
-            loadExistingStyle()
+        .onAppear { loadExistingStyle() }
+        .onChange(of: activeStyle) { _, newValue in
+            guard newValue != lastApplied else { return }
+            applyLiveStyle()
         }
+        .onDisappear {
+            // Install the finished boost as a user script on open tabs and persist it.
+            if browserState.styles.contains(where: { $0.domain == currentDomain }) {
+                browserState.commitBoostChanges()
+            }
+        }
+    }
+
+    private var editor: some View {
+        BoostEditorForm(
+            boost: $activeStyle,
+            enabledTitle: "Boost enabled on this site",
+            pageActions: BoostPageActions(
+                snipElement: {
+                    if let tabID = browserState.activeTabID {
+                        WebViewPool.shared.setElementZapperActive(true, for: tabID)
+                        browserState.isStyleStudioPresented = false
+                    }
+                },
+                runScript: { source in
+                    if let tabID = browserState.activeTabID {
+                        WebViewPool.shared.runBoostScript(source, in: tabID)
+                    }
+                }
+            ),
+            onReset: {
+                let keepID = activeStyle.id
+                var fresh = PageMod(domain: currentDomain, name: "\(currentDomain) Boost")
+                fresh.id = keepID
+                activeStyle = fresh
+            },
+            onDelete: {
+                browserState.deleteBoost(id: activeStyle.id)
+                browserState.isStyleStudioPresented = false
+            }
+        )
     }
 
     private func loadExistingStyle() {
-        if let existing = browserState.styles.first(where: { $0.domain == currentDomain }) {
-            activeStyle = existing
-        } else {
-            activeStyle = PageMod(domain: currentDomain, name: "\(currentDomain) Style")
-        }
+        guard let domain = activeWebHost else { return }
+        let loaded = browserState.styles.first(where: { $0.domain == domain })
+            ?? PageMod(domain: domain, name: "\(domain) Boost")
+        lastApplied = loaded
+        activeStyle = loaded
     }
 
+    /// Stores the edit and restyles the open page. User-script reinstall is deferred to dismissal so
+    /// dragging a slider does not rebuild every tab's scripts on each tick.
     private func applyLiveStyle() {
-        activeStyle.updatedAt = Date()
-        if let idx = browserState.styles.firstIndex(where: { $0.domain == currentDomain }) {
-            browserState.styles[idx] = activeStyle
+        guard activeWebHost != nil else { return }
+        var snapshot = activeStyle
+        snapshot.updatedAt = Date()
+        lastApplied = activeStyle
+        if let idx = browserState.styles.firstIndex(where: { $0.id == snapshot.id }) {
+            browserState.styles[idx] = snapshot
         } else {
-            browserState.styles.append(activeStyle)
+            browserState.styles.append(snapshot)
         }
         if let tabID = browserState.activeTabID {
-            WebViewPool.shared.applyStyle(activeStyle, to: tabID)
+            WebViewPool.shared.applyStyle(snapshot, to: tabID)
         }
         browserState.scheduleSave()
     }
 }
 
-// MARK: - 4. Space Theme Picker (Arc Theme Studio)
+// MARK: - 4. Space Theme Picker
 
 public struct SpaceThemePickerView: View {
     @EnvironmentObject var browserState: BrowserState
@@ -399,7 +458,7 @@ public struct SpaceThemePickerView: View {
     }
 }
 
-// MARK: - 5. Site Control Center Popover View (Arc-style)
+// MARK: - 5. Site Control Center Popover View
 
 public struct SiteControlCenterPopoverView: View {
     @EnvironmentObject var browserState: BrowserState
@@ -446,7 +505,7 @@ public struct SiteControlCenterPopoverView: View {
                 }
             }
 
-            // 2. Extensions Section (Imported from Arc Browser)
+            // 2. Extensions Section (including imported extensions)
             VStack(alignment: .leading, spacing: 8) {
                 Text("Extensions")
                     .font(.system(size: 13, weight: .bold))

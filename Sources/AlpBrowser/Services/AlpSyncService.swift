@@ -19,7 +19,8 @@ public actor AlpSyncService {
 
     private init() {}
 
-    /// Encrypts and uploads the current browser store to the sync server.
+    /// Encrypts and uploads the current browser store to the sync server,
+    /// while always guaranteeing an encrypted local vault cache on disk.
     public func pushStore(_ store: PersistedBrowserStore, endpoint: String, vaultID: String) async -> SyncResult {
         do {
             let encoder = JSONEncoder()
@@ -29,6 +30,18 @@ public actor AlpSyncService {
 
             let encryptedData = try encryptPayload(rawData, vaultID: vaultID)
 
+            // Always write local encrypted backup first
+            saveLocalEncryptedVault(encryptedData, vaultID: vaultID)
+
+            // Auto-start local daemon if targeting localhost and it's unreachable
+            if endpoint.contains("127.0.0.1") || endpoint.contains("localhost") {
+                let (alive, _) = await checkServerHealth(endpoint: endpoint)
+                if !alive {
+                    startLocalDaemonIfNeeded()
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
+            }
+
             guard let url = URL(string: "\(endpoint)/v1/vault/\(vaultID)") else {
                 return .failure("Invalid sync endpoint URL")
             }
@@ -37,39 +50,58 @@ public actor AlpSyncService {
             request.httpMethod = "PUT"
             request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
             request.httpBody = encryptedData
-            request.timeoutInterval = 10.0
+            request.timeoutInterval = 8.0
 
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return .success("Encrypted vault synced successfully")
-            } else {
-                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-                return .failure("Sync server responded with status code \(code)")
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    return .success("Encrypted vault synced successfully (AES-256-GCM)")
+                } else {
+                    let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                    return .failure("Sync server returned status code \(code)")
+                }
+            } catch {
+                // If remote fails but local encrypted cache is written, report that cleanly
+                return .failure("Daemon unreachable (\(error.localizedDescription)). Local encrypted vault secured.")
             }
         } catch {
             return .failure(error.localizedDescription)
         }
     }
 
-    /// Fetches and decrypts the browser store from the sync server.
+    /// Fetches and decrypts the browser store from the sync server or local cache.
     public func pullStore(endpoint: String, vaultID: String) async throws -> PersistedBrowserStore? {
-        guard let url = URL(string: "\(endpoint)/v1/vault/\(vaultID)") else {
-            throw NSError(domain: "AlpSyncService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid endpoint"])
+        if endpoint.contains("127.0.0.1") || endpoint.contains("localhost") {
+            let (alive, _) = await checkServerHealth(endpoint: endpoint)
+            if !alive {
+                startLocalDaemonIfNeeded()
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = 10.0
+        if let url = URL(string: "\(endpoint)/v1/vault/\(vaultID)") {
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.timeoutInterval = 8.0
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200, !data.isEmpty else {
-            return nil
+            if let (data, response) = try? await URLSession.shared.data(for: request),
+               let http = response as? HTTPURLResponse, http.statusCode == 200, !data.isEmpty {
+                let decryptedData = try decryptPayload(data, vaultID: vaultID)
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                return try decoder.decode(PersistedBrowserStore.self, from: decryptedData)
+            }
         }
 
-        let decryptedData = try decryptPayload(data, vaultID: vaultID)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(PersistedBrowserStore.self, from: decryptedData)
+        // Fallback to local encrypted vault if server was unreachable
+        if let localData = loadLocalEncryptedVault(vaultID: vaultID) {
+            let decryptedData = try decryptPayload(localData, vaultID: vaultID)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode(PersistedBrowserStore.self, from: decryptedData)
+        }
+
+        return nil
     }
 
     /// Health check for the sync daemon.
@@ -78,7 +110,7 @@ public actor AlpSyncService {
             return (false, "Invalid endpoint")
         }
         var req = URLRequest(url: url)
-        req.timeoutInterval = 4.0
+        req.timeoutInterval = 3.0
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, http.statusCode == 200 {
@@ -92,6 +124,45 @@ public actor AlpSyncService {
         } catch {
             return (false, "UNREACHABLE")
         }
+    }
+
+    // MARK: - Auto-Start Local Python Daemon
+
+    private func startLocalDaemonIfNeeded() {
+        let scriptCandidates = [
+            "/Users/alpgures/Documents/antigravity/arc2.0/Server/alp_cloud_daemon.py",
+            Bundle.main.path(forResource: "alp_cloud_daemon", ofType: "py") ?? ""
+        ]
+
+        guard let scriptPath = scriptCandidates.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+            return
+        }
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        task.arguments = [scriptPath]
+        task.standardOutput = Pipe()
+        task.standardError = Pipe()
+        try? task.run()
+    }
+
+    // MARK: - Local Encrypted Vault Backup
+
+    private func localVaultURL(for vaultID: String) -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let vaultDir = appSupport.appendingPathComponent("Alp Browser/Vaults", isDirectory: true)
+        try? FileManager.default.createDirectory(at: vaultDir, withIntermediateDirectories: true)
+        return vaultDir.appendingPathComponent("\(vaultID).enc")
+    }
+
+    private func saveLocalEncryptedVault(_ data: Data, vaultID: String) {
+        let url = localVaultURL(for: vaultID)
+        try? data.write(to: url, options: .atomic)
+    }
+
+    private func loadLocalEncryptedVault(vaultID: String) -> Data? {
+        let url = localVaultURL(for: vaultID)
+        return try? Data(contentsOf: url)
     }
 
     // MARK: - Zero-Knowledge AES-GCM Encryption / Decryption

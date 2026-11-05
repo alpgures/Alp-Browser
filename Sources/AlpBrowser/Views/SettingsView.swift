@@ -110,9 +110,9 @@ public struct SettingsView: View {
 
             // 3 App Icon Cards
             HStack(spacing: 16) {
-                // Original Icon
+                // Original Dark Icon: "Après-ski"
                 IconChoiceCard(
-                    title: "Alp Original",
+                    title: "Après-ski",
                     subtitle: "Dark Slate",
                     iconName: "alp_browser_original",
                     isSelected: browserState.selectedIconName == "alp_browser_original"
@@ -120,9 +120,9 @@ public struct SettingsView: View {
                     browserState.selectAppIcon(named: "alp_browser_original")
                 }
 
-                // White / Light Icon
+                // Light / White Icon: "Kumori-nashi"
                 IconChoiceCard(
-                    title: "Alp Light",
+                    title: "Kumori-nashi",
                     subtitle: "Alpine Frost",
                     iconName: "alp_browser_white",
                     isSelected: browserState.selectedIconName == "alp_browser_white"
@@ -466,87 +466,41 @@ public struct SettingsView: View {
         }
     }
 
-    // MARK: - 2. Appearance Tab
+    // MARK: - 2. Appearance Tab (Arc-Style Space Theme Studio)
 
     private var appearanceTab: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Space Theme Presets")
-                .font(.system(size: 14, weight: .bold))
-
-            Text("Select a colorway for your active space. Buttons preview the real theme colors.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-
-            VStack(spacing: 8) {
-                ForEach(SpaceTheme.presets, id: \.name) { preset in
-                    Button {
-                        browserState.activeSpace.theme = preset.theme
-                        browserState.scheduleSave()
-                    } label: {
-                        HStack(spacing: 12) {
-                            // Actual gradient preview pill
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: preset.theme.renderedGradientColors,
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 38, height: 24)
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.black.opacity(0.15), lineWidth: 0.6))
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(preset.name)
-                                    .font(.system(size: 12.5, weight: .semibold))
-                                    .foregroundStyle(.primary)
-                                Text(preset.subtitle)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-
-                            if browserState.activeSpace.theme.primaryColor == preset.theme.primaryColor {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                        }
-                        .padding(8)
-                        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            Divider().padding(.vertical, 4)
-
-            Toggle("Light Foreground (Dark Appearance)", isOn: $browserState.activeSpace.theme.prefersLightForeground)
-                .font(.system(size: 12.5))
-                .onChange(of: browserState.activeSpace.theme.prefersLightForeground) { _, _ in
-                    browserState.scheduleSave()
-                }
-        }
+        SpaceThemeStudioView()
     }
 
     // MARK: - 3. Vault Sync Tab
 
     private var syncTab: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Zero-Knowledge Encrypted Vault Sync")
-                .font(.system(size: 14, weight: .bold))
+            // Security Guarantee Banner
+            HStack(spacing: 12) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(Color.green)
 
-            Text("All tabs, spaces, notes, and styles are encrypted on your Mac with AES-256 before upload. Zero personal browsing history or passwords are ever transmitted.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Zero-Knowledge Encrypted Vault Sync")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("All tabs, spaces, notes, and styles are encrypted on your Mac with AES-256-GCM before transmission. Zero browsing history or passwords leave this device.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(12)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("Sync Endpoint URL:")
                         .font(.system(size: 12))
                     Spacer()
                     TextField("http://127.0.0.1:8788", text: $browserState.syncConfig.syncEndpointURL)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 240)
+                        .frame(width: 260)
                         .onChange(of: browserState.syncConfig.syncEndpointURL) { _, _ in browserState.scheduleSave() }
                 }
 
@@ -556,7 +510,7 @@ public struct SettingsView: View {
                     Spacer()
                     TextField("primary", text: $browserState.syncConfig.syncVaultID)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 240)
+                        .frame(width: 260)
                         .onChange(of: browserState.syncConfig.syncVaultID) { _, _ in browserState.scheduleSave() }
                 }
 
@@ -565,13 +519,33 @@ public struct SettingsView: View {
                     .onChange(of: browserState.syncConfig.autoSyncEnabled) { _, _ in browserState.scheduleSave() }
             }
 
-            HStack {
-                Text("Connection Status: \(browserState.syncStatusText)")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(browserState.isSyncConnected ? Color.green : Color.secondary)
+            Divider()
+
+            // Status Card
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(browserState.isSyncConnected ? Color.green : Color.orange)
+                    .frame(width: 10, height: 10)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Connection Status: \(browserState.syncStatusText)")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(browserState.isSyncConnected ? Color.primary : Color.orange)
+
+                    if let lastSync = browserState.syncConfig.lastSyncedAt {
+                        Text("Last Synced: \(lastSync.formatted(date: .abbreviated, time: .standard))")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
 
                 Spacer()
+            }
+            .padding(10)
+            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
+            // Action Buttons
+            HStack(spacing: 12) {
                 Button("Sync Vault Now") {
                     Task {
                         await browserState.syncNow()
@@ -579,8 +553,27 @@ public struct SettingsView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
+
+                Button("Restore from Cloud") {
+                    Task {
+                        await browserState.restoreVaultFromCloud()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+
+                Spacer()
+
+                Button("Test Daemon") {
+                    Task {
+                        await browserState.refreshSyncStatus()
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
             }
-            .padding(.top, 6)
+            .padding(.top, 4)
         }
     }
 

@@ -280,6 +280,30 @@ public struct StyleStudioView: View {
                     .onChange(of: activeStyle.invertColors) { _, _ in applyLiveStyle() }
             }
 
+            // Font Family Override
+            HStack {
+                Text("Font")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.7))
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { activeStyle.fontFamily ?? "Default" },
+                    set: { newVal in
+                        activeStyle.fontFamily = newVal == "Default" ? nil : newVal
+                        applyLiveStyle()
+                    }
+                )) {
+                    Text("Default").tag("Default")
+                    Text("Georgia").tag("Georgia")
+                    Text("Menlo").tag("Menlo")
+                    Text("Palatino").tag("Palatino")
+                    Text("Courier").tag("Courier")
+                    Text("Comic Sans MS").tag("Comic Sans MS")
+                }
+                .labelsHidden()
+                .controlSize(.small)
+            }
+
             // Custom CSS Box
             VStack(alignment: .leading, spacing: 4) {
                 Text("Custom CSS")
@@ -331,7 +355,7 @@ public struct StyleStudioView: View {
     }
 }
 
-// MARK: - 4. Space Theme Picker
+// MARK: - 4. Space Theme Picker (Arc Theme Studio)
 
 public struct SpaceThemePickerView: View {
     @EnvironmentObject var browserState: BrowserState
@@ -341,7 +365,7 @@ public struct SpaceThemePickerView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("Space Theme", systemImage: "paintpalette.fill")
+                Label("Arc Space Theme Studio", systemImage: "paintpalette.fill")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
 
@@ -359,50 +383,13 @@ public struct SpaceThemePickerView: View {
                 .buttonStyle(.plain)
             }
 
-            Text("PRESET THEMES")
-                .font(.system(size: 9.5, weight: .bold))
-                .foregroundStyle(.white.opacity(0.5))
-
-            // Presets
-            ForEach(SpaceTheme.presets, id: \.name) { preset in
-                Button {
-                    browserState.activeSpace.theme = preset.theme
-                    browserState.scheduleSave()
-                } label: {
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(preset.theme.primaryColor.swiftUIColor)
-                            .frame(width: 14, height: 14)
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(preset.name)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white)
-                            Text(preset.subtitle)
-                                .font(.system(size: 10))
-                                .foregroundStyle(.white.opacity(0.6))
-                        }
-                        Spacer()
-                    }
-                    .padding(8)
-                    .background(Color.white.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
+            ScrollView(.vertical, showsIndicators: false) {
+                SpaceThemeStudioView()
             }
-
-            Divider().background(Color.white.opacity(0.12))
-
-            // Appearance Toggle
-            Toggle("Light Foreground (Dark Mode)", isOn: $browserState.activeSpace.theme.prefersLightForeground)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.85))
-                .onChange(of: browserState.activeSpace.theme.prefersLightForeground) { _, _ in
-                    browserState.scheduleSave()
-                }
+            .frame(maxHeight: 520)
         }
-        .padding(16)
-        .frame(width: 280)
+        .padding(18)
+        .frame(width: 480)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(red: 0.12, green: 0.12, blue: 0.15))

@@ -763,16 +763,44 @@ public final class BrowserState: ObservableObject {
             endpoint: syncConfig.syncEndpointURL,
             vaultID: syncConfig.syncVaultID
         )
+
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        let timeStr = formatter.string(from: Date())
+
         switch result {
-        case .success:
+        case .success(let msg):
             syncConfig.lastSyncedAt = Date()
             isSyncConnected = true
-            syncStatusText = "Synced"
-            if !silent { showToast("Synced vault successfully") }
+            syncStatusText = "Synced at \(timeStr) • AES-256-GCM"
+            if !silent { showToast(msg) }
+            scheduleSave()
         case .failure(let err):
-            isSyncConnected = false
-            syncStatusText = "Sync failed"
-            if !silent { showToast("Sync error: \(err)") }
+            let (alive, _) = await AlpSyncService.shared.checkServerHealth(endpoint: syncConfig.syncEndpointURL)
+            isSyncConnected = alive
+            syncStatusText = alive ? "Sync warning: \(err)" : "Sync failed: daemon unreachable"
+            if !silent { showToast("Sync: \(err)") }
+        }
+    }
+
+    public func restoreVaultFromCloud() async {
+        syncStatusText = "Restoring vault..."
+        do {
+            if let store = try await AlpSyncService.shared.pullStore(
+                endpoint: syncConfig.syncEndpointURL,
+                vaultID: syncConfig.syncVaultID
+            ) {
+                applyPersistedStore(store)
+                isSyncConnected = true
+                syncStatusText = "Vault restored successfully"
+                showToast("Tabs and spaces restored from vault")
+            } else {
+                syncStatusText = "No remote vault found"
+                showToast("No vault data found for ID '\(syncConfig.syncVaultID)'")
+            }
+        } catch {
+            syncStatusText = "Restore failed: \(error.localizedDescription)"
+            showToast("Restore failed: \(error.localizedDescription)")
         }
     }
 
@@ -897,29 +925,34 @@ public final class BrowserState: ObservableObject {
         }
     }
 
+    public func applyPersistedStore(_ store: PersistedBrowserStore) {
+        self.spaces = store.spaces
+        self.favorites = store.favorites
+        self.activeSpaceID = store.activeSpaceID ?? store.spaces.first?.id
+        self.styles = store.styles
+        self.canvases = store.canvases
+        self.notes = store.notes
+        self.archivedTabs = store.archivedTabs
+        self.autoArchiveHours = store.autoArchiveHours
+        self.autoHibernateMinutes = store.autoHibernateMinutes
+        self.adBlockerEnabled = store.adBlockerEnabled
+        self.syncConfig = store.syncConfig
+        self.hasImportedFromArc = store.hasImportedFromArc
+        self.selectedIconName = store.selectedIconName
+        self.customIconConfig = store.customIconConfig
+        self.sidebarWidth = CGFloat(store.sidebarWidth)
+        scheduleSave()
+    }
+
     private func loadPersistedOrImportFromArc() {
         if let data = try? Data(contentsOf: storeFileURL) {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             if let store = try? decoder.decode(PersistedBrowserStore.self, from: data) {
-                self.spaces = store.spaces
-                self.favorites = store.favorites
-                self.activeSpaceID = store.activeSpaceID ?? store.spaces.first?.id
-                self.styles = store.styles
-                self.canvases = store.canvases
-                self.notes = store.notes
-                self.archivedTabs = store.archivedTabs
+                applyPersistedStore(store)
                 if self.archivedTabs.isEmpty {
                     self.archivedTabs = AlpSidebarImporter.importArchivedTabs()
                 }
-                self.autoArchiveHours = store.autoArchiveHours
-                self.autoHibernateMinutes = store.autoHibernateMinutes
-                self.adBlockerEnabled = store.adBlockerEnabled
-                self.syncConfig = store.syncConfig
-                self.hasImportedFromArc = store.hasImportedFromArc
-                self.selectedIconName = store.selectedIconName
-                self.customIconConfig = store.customIconConfig
-                self.sidebarWidth = CGFloat(store.sidebarWidth)
                 return
             }
         }

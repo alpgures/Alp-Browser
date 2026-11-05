@@ -25,6 +25,18 @@ public struct RGBAColor: Codable, Equatable, Hashable, Sendable {
         self.alpha = min(max(alpha, 0), 1)
     }
 
+    public init(nsColor: NSColor) {
+        let srgb = nsColor.usingColorSpace(.sRGB) ?? nsColor
+        self.red = Double(srgb.redComponent)
+        self.green = Double(srgb.greenComponent)
+        self.blue = Double(srgb.blueComponent)
+        self.alpha = Double(srgb.alphaComponent)
+    }
+
+    public init(color: Color) {
+        self.init(nsColor: NSColor(color))
+    }
+
     public init(hue: Double, saturation: Double, brightness: Double, alpha: Double = 1.0) {
         let ns = NSColor(
             hue: CGFloat(min(max(hue, 0), 1)),
@@ -286,13 +298,51 @@ public struct SpaceTheme: Codable, Equatable, Hashable, Sendable {
         prefersLightForeground: false
     )
 
+    public static let forestEmerald = SpaceTheme(
+        primaryColor: RGBAColor(red: 0.12, green: 0.45, blue: 0.32),
+        secondaryColor: RGBAColor(red: 0.05, green: 0.22, blue: 0.16),
+        accentColor: RGBAColor(red: 0.42, green: 0.88, blue: 0.65),
+        colorStops: [
+            RGBAColor(red: 0.12, green: 0.45, blue: 0.32),
+            RGBAColor(red: 0.22, green: 0.65, blue: 0.48)
+        ],
+        isVibrant: true,
+        grainIntensity: 0.60,
+        intensityFactor: 0.45,
+        prefersLightForeground: true
+    )
+
+    public static let velvetRose = SpaceTheme(
+        primaryColor: RGBAColor(red: 0.76, green: 0.20, blue: 0.42),
+        secondaryColor: RGBAColor(red: 0.38, green: 0.08, blue: 0.20),
+        accentColor: RGBAColor(red: 0.98, green: 0.55, blue: 0.72),
+        colorStops: [
+            RGBAColor(red: 0.76, green: 0.20, blue: 0.42),
+            RGBAColor(red: 0.50, green: 0.15, blue: 0.58)
+        ],
+        isVibrant: true,
+        grainIntensity: 0.70,
+        intensityFactor: 0.50,
+        prefersLightForeground: true
+    )
+
     public static let presets: [(name: String, subtitle: String, theme: SpaceTheme)] = [
         ("Personal Sky", "Frosted Ice Blue (Light)", .userPersonalSky),
         ("Leisure Plum", "Deep Amethyst (Dark)", .userLeisurePlum),
         ("Deep Cerulean", "Ocean Dark (Dark)", .userPersonalSkyDark),
         ("Aurora Mesh", "3-Tone Pastel", .auroraMesh),
-        ("Warm Sunset", "2-Tone Coral", .warmSunset)
+        ("Warm Sunset", "2-Tone Coral", .warmSunset),
+        ("Forest Emerald", "Alpine Pine Glass", .forestEmerald),
+        ("Velvet Rose", "Magenta & Orchid", .velvetRose)
     ]
+}
+
+public enum SpaceThemeMode: String, CaseIterable, Identifiable, Codable, Sendable {
+    case single = "Single Color"
+    case dualGradient = "Dual Gradient"
+    case multiMesh = "3-Stop Mesh"
+
+    public var id: String { rawValue }
 }
 
 // MARK: - Tab & Sidebar Hierarchy Models

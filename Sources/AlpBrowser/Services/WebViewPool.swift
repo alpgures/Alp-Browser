@@ -67,6 +67,11 @@ public final class WebViewPool: NSObject, ObservableObject {
         if #available(macOS 14.0, *) {
             config.preferences.isTextInteractionEnabled = true
         }
+        if #available(macOS 15.4, *) {
+            if let extController = AlpExtensionManager.shared.extensionController {
+                config.webExtensionController = extController
+            }
+        }
 
         let userContentController = WKUserContentController()
         if let ruleList = compiledContentRuleList, browserState?.adBlockerEnabled ?? true {

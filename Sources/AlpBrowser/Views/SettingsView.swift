@@ -18,6 +18,7 @@ public struct SettingsView: View {
     public enum SettingsTab: String, CaseIterable, Identifiable {
         case general = "General & Icons"
         case appearance = "Appearance"
+        case extensions = "Extensions"
         case sync = "Vault Sync"
         case privacy = "Privacy & Shields"
 
@@ -27,6 +28,7 @@ public struct SettingsView: View {
             switch self {
             case .general: return "app.badge"
             case .appearance: return "paintpalette"
+            case .extensions: return "puzzlepiece.extension"
             case .sync: return "arrow.triangle.2.circlepath"
             case .privacy: return "shield.lefthalf.filled"
             }
@@ -81,6 +83,8 @@ public struct SettingsView: View {
                         generalAndIconsTab
                     case .appearance:
                         appearanceTab
+                    case .extensions:
+                        extensionsTab
                     case .sync:
                         syncTab
                     case .privacy:
@@ -616,6 +620,122 @@ public struct SettingsView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
+            }
+        }
+    }
+
+    // MARK: - 5. Web Extensions Tab
+
+    private var extensionsTab: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Web Extensions")
+                        .font(.system(size: 15, weight: .bold))
+                    Text("Load unpacked Safari and Chrome Manifest V3 extensions into Alp Browser.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    Task {
+                        await AlpExtensionManager.shared.installExtensionFromOpenPanel()
+                    }
+                } label: {
+                    Label("Install Extension...", systemImage: "plus")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            if let errorMsg = AlpExtensionManager.shared.lastErrorMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(errorMsg)
+                        .font(.system(size: 12))
+                    Spacer()
+                    Button("Dismiss") {
+                        AlpExtensionManager.shared.lastErrorMessage = nil
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11))
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            if AlpExtensionManager.shared.installedExtensions.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "puzzlepiece.extension")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.secondary.opacity(0.6))
+                    Text("No Extensions Installed")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Click 'Install Extension...' to load any unpacked directory containing a manifest.json.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 380)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(AlpExtensionManager.shared.installedExtensions) { ext in
+                        HStack(spacing: 12) {
+                            Image(systemName: "puzzlepiece.extension.fill")
+                                .font(.system(size: 20))
+                                .foregroundStyle(ext.isEnabled ? Color.accentColor : Color.secondary)
+                                .frame(width: 32, height: 32)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(ext.name)
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text("v\(ext.version)")
+                                        .font(.system(size: 10.5))
+                                        .foregroundStyle(.secondary)
+                                }
+                                if !ext.description.isEmpty {
+                                    Text(ext.description)
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+
+                            Spacer()
+
+                            Toggle("", isOn: Binding(
+                                get: { ext.isEnabled },
+                                set: { _ in
+                                    Task {
+                                        await AlpExtensionManager.shared.toggleExtension(id: ext.id)
+                                    }
+                                }
+                            ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+
+                            Button {
+                                Task {
+                                    await AlpExtensionManager.shared.removeExtension(id: ext.id)
+                                }
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove Extension")
+                        }
+                        .padding(12)
+                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                }
             }
         }
     }

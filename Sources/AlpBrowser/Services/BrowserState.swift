@@ -27,7 +27,12 @@ public final class BrowserState: ObservableObject {
     @Published public var isSidebarHoverPeeking: Bool = false
     @Published public var sidebarWidth: CGFloat = 296
 
-    @Published public var isCommandBarPresented: Bool = false
+    @Published public var isCommandBarPresented: Bool = false {
+        // Whatever dismisses the bar, the next presentation starts as the centered bar unless the URL dropdown asks otherwise.
+        didSet { if !isCommandBarPresented { commandBarAnchored = false } }
+    }
+    /// True while the bar is shown as the small dropdown under the URL pill (navigates the existing tab) rather than centered.
+    @Published public var commandBarAnchored: Bool = false
     @Published public var commandBarInitialQuery: String = ""
     /// Bumped on every openCommandBar call so an already-visible bar can re-take keyboard focus.
     @Published public var commandBarOpenCount: Int = 0
@@ -545,6 +550,21 @@ public final class BrowserState: ObservableObject {
             commandBarInitialQuery = ""
         }
         commandBarOpenCount &+= 1
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
+            isCommandBarPresented = true
+        }
+    }
+
+    /// URL-pill click: on an existing page this opens the small dropdown under the pill (editing that tab's URL in place).
+    /// A blank tab has nothing to edit, so it gets the centered new-tab command bar.
+    public func openURLDropdown() {
+        guard let tab = activeTab, tab.kind == .web, !tab.isBlank else {
+            openCommandBar(prefilledWithCurrentURL: false)
+            return
+        }
+        commandBarInitialQuery = tab.urlString
+        commandBarOpenCount &+= 1
+        commandBarAnchored = true
         withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
             isCommandBarPresented = true
         }

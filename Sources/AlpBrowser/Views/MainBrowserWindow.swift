@@ -10,8 +10,19 @@ import SwiftUI
 import WebKit
 import AppKit
 
+/// The sidebar URL pill's frame in the window's coordinate space, used to anchor the URL dropdown.
+struct AlpURLPillFrameKey: PreferenceKey {
+    static let space = "alpWindow"
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
 public struct MainBrowserWindow: View {
     @EnvironmentObject var browserState: BrowserState
+    @State private var urlPillFrame: CGRect = .zero
 
     public init() {}
 
@@ -36,20 +47,13 @@ public struct MainBrowserWindow: View {
 
                 // Inset Web Viewport (Remains stationary; only the sidebar space slides)
                 viewportArea
-                    // With the sidebar hidden the page starts below the navigation strip, never under the traffic lights.
-                    .padding(.top, browserState.isSidebarCollapsed ? CollapsedNavStripMetrics.contentTopInset : 8)
+                    // With the sidebar hidden there is no top chrome at all: the page is pure content.
+                    .padding(.top, 8)
                     .padding(.bottom, 8)
                     .padding(.trailing, 8)
                     .padding(.leading, browserState.isSidebarCollapsed ? 8 : 2)
             }
             .ignoresSafeArea(.all, edges: .top)
-
-            // 2b. Collapsed-sidebar navigation strip (URL pill beside the traffic lights)
-            if browserState.isSidebarCollapsed {
-                CollapsedNavStripView()
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .transition(.opacity)
-            }
 
             // 3. Collapsed Sidebar Edge Hover Trigger
             if browserState.isSidebarCollapsed {
@@ -85,7 +89,7 @@ public struct MainBrowserWindow: View {
                             .padding(.top, 0)
                             .padding(.bottom, 8)
                             .onHover { stillInside in
-                                if !stillInside {
+                                if !stillInside && !browserState.isCommandBarPresented {
                                     withAnimation(.spring(response: 0.24, dampingFraction: 0.85)) {
                                         browserState.isSidebarHoverPeeking = false
                                     }
@@ -162,7 +166,7 @@ public struct MainBrowserWindow: View {
 
             // 7. Command Bar (⌘T / ⌘L)
             if browserState.isCommandBarPresented {
-                CommandBarView()
+                CommandBarView(dropdownAnchor: browserState.commandBarAnchored && urlPillFrame != .zero ? urlPillFrame : nil)
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
             }
 
@@ -195,6 +199,16 @@ public struct MainBrowserWindow: View {
             }
         }
         .ignoresSafeArea(.all)
+        .coordinateSpace(name: AlpURLPillFrameKey.space)
+        .onPreferenceChange(AlpURLPillFrameKey.self) { urlPillFrame = $0 }
+        .onChange(of: browserState.isCommandBarPresented) { _, presented in
+            // The peeked sidebar stays up while the bar is open (the dropdown is anchored to it); close it with the bar.
+            if !presented && browserState.isSidebarCollapsed && browserState.isSidebarHoverPeeking {
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.85)) {
+                    browserState.isSidebarHoverPeeking = false
+                }
+            }
+        }
         .onExitCommand {
             if browserState.isCommandBarPresented {
                 browserState.isCommandBarPresented = false
@@ -286,7 +300,7 @@ public struct MainBrowserWindow: View {
     }
 }
 
-// MARK: - Collapsed Sidebar Navigation Strip
+// MARK: - Top Bar Geometry
 
 /// One shared vertical centre for everything in the top band: the system traffic lights
 /// (repositioned by `AlpWindowChrome`), the toggle/back/forward/reload icons and the URL pill.
@@ -320,162 +334,6 @@ struct AlpTopBarIconButton: View {
         .buttonStyle(AlpIconButtonStyle(theme: theme))
         .disabled(!isEnabled)
         .help(help)
-    }
-}
-
-enum CollapsedNavStripMetrics {
-    /// Height of the titlebar band (shared with the sidebar's nav row).
-    static let bandHeight: CGFloat = AlpTopBarMetrics.bandHeight
-    /// Where the page starts: the band plus a small gap so the pill never touches the page.
-    static let contentTopInset: CGFloat = bandHeight + 4
-    static let pillHeight: CGFloat = 26
-    static let pillMaxWidth: CGFloat = 520
-    /// Space reserved at each side: traffic lights + toggle/back/forward on the left, mirrored on the right
-    /// so the pill stays centred on the window.
-    static let sideInset: CGFloat = AlpTopBarMetrics.trafficLightInset
-        + 3 * AlpTopBarMetrics.iconSize + 2 * AlpTopBarMetrics.iconSpacing + 16
-}
-
-/// Titlebar band shown while the sidebar is hidden: toggle / back / forward beside the traffic lights and a
-/// centered, frosted URL pill for the active tab. Clicking the pill opens the command bar (⌘L does the same).
-struct CollapsedNavStripView: View {
-    @EnvironmentObject var browserState: BrowserState
-
-    var body: some View {
-        GeometryReader { geo in
-            let inset = CollapsedNavStripMetrics.sideInset
-            // Centered on the window, but never wide enough to reach the icons or the right edge.
-            let width = max(160, min(CollapsedNavStripMetrics.pillMaxWidth, geo.size.width - inset * 2))
-            ZStack(alignment: .leading) {
-                HStack(spacing: 0) {
-                    Spacer(minLength: inset)
-                    NavPill(tab: browserState.activeTab, theme: browserState.activeTheme)
-                        .frame(width: width, height: CollapsedNavStripMetrics.pillHeight)
-                    Spacer(minLength: inset)
-                }
-
-                HStack(spacing: AlpTopBarMetrics.iconSpacing) {
-                    let theme = browserState.activeTheme
-                    AlpTopBarIconButton(symbol: "sidebar.left", help: "Toggle Sidebar (⌘S)", theme: theme) {
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                            browserState.isSidebarCollapsed.toggle()
-                            browserState.isSidebarHoverPeeking = false
-                        }
-                    }
-                    AlpTopBarIconButton(
-                        symbol: "chevron.left", help: "Back (⌘[)", theme: theme,
-                        isEnabled: browserState.canGoBackInActiveTab
-                    ) { browserState.goBackInActiveTab() }
-                    AlpTopBarIconButton(
-                        symbol: "chevron.right", help: "Forward (⌘])", theme: theme,
-                        isEnabled: browserState.canGoForwardInActiveTab
-                    ) { browserState.goForwardInActiveTab() }
-                }
-                .padding(.leading, AlpTopBarMetrics.trafficLightInset)
-            }
-            .frame(width: geo.size.width, height: CollapsedNavStripMetrics.bandHeight)
-        }
-        .frame(height: CollapsedNavStripMetrics.bandHeight)
-    }
-
-    private struct NavPill: View {
-        @EnvironmentObject var browserState: BrowserState
-        let tab: TabItem?
-        let theme: SpaceTheme
-
-        private var isWeb: Bool { tab.map { $0.kind == .web && !$0.isBlank } ?? false }
-
-        var body: some View {
-            HStack(spacing: 8) {
-                Button {
-                    browserState.openCommandBar(prefilledWithCurrentURL: true)
-                } label: {
-                    HStack(spacing: 7) {
-                        leadingGlyph
-                        label
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Search or enter a URL (⌘L)")
-
-                if isWeb {
-                    Button {
-                        browserState.reloadActiveTab()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(theme.secondaryForegroundColor)
-                            .frame(width: 20, height: 20)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Reload Page (⌘R)")
-                }
-            }
-            .padding(.horizontal, 12)
-            .frame(maxHeight: .infinity)
-            .background(
-                ZStack {
-                    Capsule(style: .continuous).fill(.ultraThinMaterial)
-                    Capsule(style: .continuous).fill(theme.primaryColor.swiftUIColor.opacity(0.14))
-                }
-            )
-            .overlay(Capsule(style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 0.8))
-            .shadow(color: .black.opacity(0.14), radius: 6, y: 2)
-        }
-
-        @ViewBuilder
-        private var leadingGlyph: some View {
-            if tab?.isLoading == true {
-                ProgressView()
-                    .controlSize(.small)
-                    .scaleEffect(0.6)
-                    .frame(width: 12, height: 12)
-            } else if let tab, isWeb {
-                Image(systemName: tab.isSecure ? "lock.fill" : "exclamationmark.triangle.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(theme.secondaryForegroundColor)
-                    .frame(width: 12, height: 12)
-            } else {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(theme.secondaryForegroundColor)
-                    .frame(width: 12, height: 12)
-            }
-        }
-
-        @ViewBuilder
-        private var label: some View {
-            if let tab, isWeb {
-                let domain = tab.simplifiedDomain
-                let title = tab.displayTitle
-                HStack(spacing: 6) {
-                    Text(domain)
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(theme.foregroundColor.opacity(0.95))
-                        .lineLimit(1)
-                    if title != domain {
-                        Text(title)
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(theme.secondaryForegroundColor)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                }
-            } else if let tab, !tab.isBlank {
-                Text(tab.displayTitle)
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(theme.foregroundColor.opacity(0.95))
-                    .lineLimit(1)
-            } else {
-                Text("Search or Enter URL…")
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(theme.secondaryForegroundColor)
-                    .lineLimit(1)
-            }
-        }
     }
 }
 

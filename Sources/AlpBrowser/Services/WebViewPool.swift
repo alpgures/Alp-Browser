@@ -705,7 +705,7 @@ final class WebViewInstanceCoordinator: NSObject, WKNavigationDelegate, WKUIDele
     }
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-        DownloadTracker.shared.end(download)
+        DownloadTracker.shared.end(download, failed: true)
         pool?.browserState?.showToast("Download failed: \(error.localizedDescription)")
     }
 }

@@ -18,9 +18,22 @@ public struct CommandBarView: View {
     @State private var selectedIndex: Int = 0
     @State private var keyMonitor: Any?
 
+    /// Set when the bar is the small dropdown under the URL pill: the pill's frame in window coordinates.
+    /// nil means the regular centered bar (⌘T, ⌘L, new tabs).
+    private let dropdownAnchor: CGRect?
+
+    private var isDropdown: Bool { dropdownAnchor != nil }
+
     private var openInCurrentTab: Bool {
-        !browserState.commandBarInitialQuery.isEmpty
+        isDropdown || !browserState.commandBarInitialQuery.isEmpty
     }
+
+    /// In the dropdown the field opens holding the page's URL; until it is edited the list is unfiltered.
+    private var isQueryUnedited: Bool {
+        isDropdown && query == browserState.commandBarInitialQuery
+    }
+
+    private var dropdownWidth: CGFloat { max(dropdownAnchor?.width ?? 0, 400) }
 
     struct CommandSuggestion: Identifiable {
         /// Stable across re-renders so hovering a row does not rebuild the list.
@@ -57,7 +70,9 @@ public struct CommandBarView: View {
         }
     }
 
-    public init() {}
+    public init(dropdownAnchor: CGRect? = nil) {
+        self.dropdownAnchor = dropdownAnchor
+    }
 
     /// One runnable command (menu action) the bar can offer.
     private struct BarAction {
@@ -175,10 +190,25 @@ public struct CommandBarView: View {
 
     private func suggestionList() -> [CommandSuggestion] {
         var list: [CommandSuggestion] = []
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = isQueryUnedited ? "" : query.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = trimmed.lowercased()
         let tokens = lower.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         let maxRows = 8
+
+        // Dropdown only: a "New Tab" row leads the list (it hands over to the centered bar).
+        if isDropdown && trimmed.isEmpty {
+            list.append(
+                CommandSuggestion(
+                    id: "dropdown-new-tab",
+                    icon: "plus",
+                    title: "New Tab",
+                    action: {
+                        browserState.isCommandBarPresented = false
+                        browserState.openCommandBar(prefilledWithCurrentURL: false)
+                    }
+                )
+            )
+        }
 
         // 1. Primary URL or Web Search Action when user types
         if !trimmed.isEmpty {
@@ -218,8 +248,12 @@ public struct CommandBarView: View {
         // 2. Open / Pinned Tabs Matching Query ("Switch to Tab") — single-line, skipping extension new-tab placeholders
         var seenTabIDs = Set<UUID>()
         var seenTitles = Set<String>()
-        let candidateTabs = (browserState.activeSpace.todayTabs + browserState.activeSpace.pinnedNodes.flatMap { $0.allTabs } + browserState.favorites + browserState.spaces.flatMap { $0.allTabs })
-        let tabLimit = trimmed.isEmpty ? 4 : 3
+        let otherTabs = browserState.activeSpace.todayTabs + browserState.activeSpace.pinnedNodes.flatMap { $0.allTabs } + browserState.spaces.flatMap { $0.allTabs }
+        // The dropdown leads with favorites and never offers the tab it is editing.
+        let candidateTabs = isDropdown
+            ? (browserState.favorites + otherTabs).filter { $0.id != browserState.activeTabID }
+            : (browserState.activeSpace.todayTabs + browserState.activeSpace.pinnedNodes.flatMap { $0.allTabs } + browserState.favorites + browserState.spaces.flatMap { $0.allTabs })
+        let tabLimit = trimmed.isEmpty ? (isDropdown ? 5 : 4) : 3
         var tabRows = 0
         for tab in candidateTabs {
             guard tabRows < tabLimit else { break }
@@ -294,7 +328,7 @@ public struct CommandBarView: View {
         // 4. Actions: one subtle row when the query is empty, every matching action when typing
         let actions = availableActions(query: trimmed)
         if tokens.isEmpty {
-            if let first = actions.first {
+            if !isDropdown, let first = actions.first {
                 list.append(
                     CommandSuggestion(id: "action-\(first.title)", icon: first.icon, title: first.title, isActionRow: true, action: first.run)
                 )
@@ -353,11 +387,12 @@ public struct CommandBarView: View {
 
                     TextField("Search or Enter URL…", text: $query)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 18, weight: .regular))
+                        .font(.system(size: isDropdown ? 14 : 18, weight: .regular))
                         .foregroundStyle(.white)
                         .focused($isInputFocused)
                         .onChange(of: query) { _, _ in
-                            selectedIndex = 0
+                            // Dropdown with the untouched URL: nothing highlighted, so Enter re-navigates the current page.
+                            selectedIndex = isQueryUnedited ? -1 : 0
                         }
                         .onKeyPress(.escape) {
                             browserState.isCommandBarPresented = false
@@ -380,10 +415,27 @@ public struct CommandBarView: View {
                         }
 
                     Spacer(minLength: 4)
+
+                    if isDropdown {
+                        Button {
+                            browserState.isCommandBarPresented = false
+                            withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                                browserState.isSiteControlCenterPresented = true
+                            }
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.7))
+                                .frame(width: 26, height: 26)
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Site Controls & Options")
+                    }
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 16)
-                .padding(.bottom, 14)
+                .padding(.horizontal, isDropdown ? 14 : 18)
+                .padding(.top, isDropdown ? 10 : 16)
+                .padding(.bottom, isDropdown ? 8 : 14)
 
                 if !items.isEmpty {
                     Rectangle()
@@ -441,7 +493,7 @@ public struct CommandBarView: View {
                                     }
                                 }
                                 .padding(.horizontal, 10)
-                                .frame(height: 38)
+                                .frame(height: isDropdown ? 34 : 38)
                                 .background(
                                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                                         .fill(isSelected ? selectionBarColor : Color.clear)
@@ -460,7 +512,7 @@ public struct CommandBarView: View {
                     .padding(.bottom, 8)
                 }
             }
-            .frame(width: 620)
+            .frame(width: isDropdown ? dropdownWidth : 620)
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -476,21 +528,30 @@ public struct CommandBarView: View {
                     .stroke(Color.white.opacity(0.14), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.45), radius: 32, y: 14)
-            // Centered on the window (this ZStack fills the whole window), both axes.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            // Centered on the window (this ZStack fills the whole window), both axes; the dropdown instead
+            // hangs from the URL pill's lower-left corner.
+            .padding(.leading, dropdownAnchor?.minX ?? 0)
+            .padding(.top, dropdownAnchor.map { $0.maxY + 6 } ?? 0)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isDropdown ? .topLeading : .center)
         }
         .onExitCommand {
             browserState.isCommandBarPresented = false
         }
         .onAppear {
             query = browserState.commandBarInitialQuery
-            selectedIndex = 0
+            selectedIndex = isQueryUnedited ? -1 : 0
             focusField()
 
             // ⌘L pre-fills the current URL; select it so typing replaces it.
             if !browserState.commandBarInitialQuery.isEmpty {
                 DispatchQueue.main.async {
                     (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
+                }
+                if isDropdown {
+                    // Focus can land a beat late; select the URL again once it has, unless the user already typed.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        if isQueryUnedited { (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil) }
+                    }
                 }
             }
 
@@ -517,6 +578,7 @@ public struct CommandBarView: View {
         .onChange(of: browserState.commandBarOpenCount) { _, _ in
             // ⌘T / ⌘L while the bar is already up: pull focus back into the field.
             query = browserState.commandBarInitialQuery
+            selectedIndex = isQueryUnedited ? -1 : 0
             focusField()
         }
         .onDisappear {

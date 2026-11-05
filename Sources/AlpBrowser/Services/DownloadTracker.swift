@@ -2,13 +2,33 @@
 //  DownloadTracker.swift
 //  Alp Browser
 //
-//  Tracks in-flight WKDownloads so the Library can show live progress and
-//  refresh its list when a transfer finishes.
+//  Tracks in-flight WKDownloads so the Library can show live progress, and keeps a
+//  persistent history of the downloads this browser itself performed. The Library's
+//  Downloads and Media lists read only this history, never the ~/Downloads folder.
 //  Copyright © 2026 Alp Gures. All rights reserved.
 //
 
 import Foundation
 import WebKit
+
+/// One download made inside this browser.
+struct DownloadRecord: Identifiable, Codable, Equatable {
+    enum State: String, Codable {
+        case completed
+        case failed
+    }
+
+    let id: UUID
+    /// Absolute path of the saved file.
+    var filePath: String
+    /// Site the download came from (page host, falling back to the request host); nil when unknown.
+    var sourceHost: String?
+    var date: Date
+    var state: State
+
+    var fileURL: URL { URL(fileURLWithPath: filePath) }
+    var fileName: String { fileURL.lastPathComponent }
+}
 
 @MainActor
 final class DownloadTracker: ObservableObject {
@@ -17,6 +37,7 @@ final class DownloadTracker: ObservableObject {
     struct ActiveDownload: Identifiable, Equatable {
         let id: UUID
         let fileURL: URL
+        var sourceHost: String?
         var fraction: Double
         var receivedBytes: Int64
         var totalBytes: Int64
@@ -24,18 +45,34 @@ final class DownloadTracker: ObservableObject {
 
     /// Transfers currently in progress, oldest first.
     @Published private(set) var active: [ActiveDownload] = []
-    /// Bumped whenever a transfer finishes or fails, so views can reload their file lists.
+    /// Finished and failed downloads made by this browser, newest first.
+    @Published private(set) var records: [DownloadRecord] = []
+    /// Bumped whenever a transfer finishes or fails, so views can refresh.
     @Published private(set) var finishedCount: Int = 0
 
+    private static let maxRecords = 500
     private var ids: [ObjectIdentifier: UUID] = [:]
     private var observers: [UUID: NSKeyValueObservation] = [:]
+    private var sources: [UUID: (path: String, host: String?)] = [:]
 
-    private init() {}
+    private static var storeURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport.appendingPathComponent("AlpBrowser", isDirectory: true).appendingPathComponent("downloads.json")
+    }
+
+    private init() {
+        if let data = try? Data(contentsOf: Self.storeURL),
+           let decoded = try? JSONDecoder().decode([DownloadRecord].self, from: data) {
+            records = decoded.sorted { $0.date > $1.date }
+        }
+    }
 
     func begin(_ download: WKDownload, destination: URL) {
         let id = UUID()
+        let host = Self.sourceHost(of: download)
         ids[ObjectIdentifier(download)] = id
-        active.append(ActiveDownload(id: id, fileURL: destination, fraction: 0, receivedBytes: 0, totalBytes: 0))
+        sources[id] = (destination.path, host)
+        active.append(ActiveDownload(id: id, fileURL: destination, sourceHost: host, fraction: 0, receivedBytes: 0, totalBytes: 0))
 
         let progress = download.progress
         observers[id] = progress.observe(\.fractionCompleted, options: [.new]) { [weak self] prog, _ in
@@ -48,11 +85,42 @@ final class DownloadTracker: ObservableObject {
         }
     }
 
-    func end(_ download: WKDownload) {
+    func end(_ download: WKDownload, failed: Bool = false) {
         guard let id = ids.removeValue(forKey: ObjectIdentifier(download)) else { return }
         observers.removeValue(forKey: id)?.invalidate()
         active.removeAll { $0.id == id }
+        if let source = sources.removeValue(forKey: id) {
+            records.insert(DownloadRecord(id: id, filePath: source.path, sourceHost: source.host,
+                                          date: Date(), state: failed ? .failed : .completed), at: 0)
+            if records.count > Self.maxRecords { records.removeLast(records.count - Self.maxRecords) }
+            persist()
+        }
         finishedCount += 1
+    }
+
+    /// Removes a record from the history. The file on disk is left alone.
+    func remove(_ record: DownloadRecord) {
+        records.removeAll { $0.id == record.id }
+        persist()
+    }
+
+    private func persist() {
+        let snapshot = records
+        let url = Self.storeURL
+        Task.detached(priority: .utility) {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let data = try? JSONEncoder().encode(snapshot) {
+                try? data.write(to: url, options: .atomic)
+            }
+        }
+    }
+
+    private static func sourceHost(of download: WKDownload) -> String? {
+        let candidates = [download.webView?.url?.host, download.originalRequest?.url?.host]
+        for case let host? in candidates where !host.isEmpty {
+            return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        }
+        return nil
     }
 
     private func update(id: UUID, fraction: Double, received: Int64, total: Int64) {

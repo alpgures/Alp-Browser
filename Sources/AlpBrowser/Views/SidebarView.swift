@@ -158,9 +158,9 @@ public struct SidebarView: View {
 
     private var urlCommandPill: some View {
         HStack(spacing: 6) {
-            // Domain / URL Title Area (Click opens Command Bar ⌘T / ⌘L)
+            // Domain / URL Title Area (click opens the dropdown under the pill; a blank tab gets the centered bar)
             Button {
-                browserState.openCommandBar(prefilledWithCurrentURL: true)
+                browserState.openURLDropdown()
             } label: {
                 HStack(spacing: 6) {
                     if browserState.activeTab?.isLoading == true {
@@ -219,6 +219,12 @@ public struct SidebarView: View {
                 )
         )
         .contentShape(Rectangle())
+        .background(
+            // Reports the pill's frame so the URL dropdown can anchor directly under it.
+            GeometryReader { geo in
+                Color.clear.preference(key: AlpURLPillFrameKey.self, value: geo.frame(in: .named(AlpURLPillFrameKey.space)))
+            }
+        )
         .onHover { isHoveringUrlPill = $0 }   // no animation: state only drives opacity
     }
 
@@ -412,7 +418,6 @@ public struct SidebarView: View {
 }
 
 
-}
 
 // MARK: - Space Switcher Icon
 

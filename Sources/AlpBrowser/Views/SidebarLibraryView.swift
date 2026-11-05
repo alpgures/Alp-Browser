@@ -38,8 +38,6 @@ public struct SidebarLibraryView: View {
     @EnvironmentObject var browserState: BrowserState
     @State private var selectedSection: LibraryRailSection = .archive
     @State private var searchQuery: String = ""
-    @State private var downloadFiles: [URL] = []
-    @State private var mediaFiles: [URL] = []
     @ObservedObject private var tracker = DownloadTracker.shared
     @State private var archiveFilter: ArchiveFilter = .all
     @State private var confirmClearArchive = false
@@ -71,39 +69,19 @@ public struct SidebarLibraryView: View {
         }
         .foregroundStyle(theme.foregroundColor)
         .onAppear {
-            Self.setWindowTrafficLights(hidden: true)
             if let requested = browserState.requestedLibrarySection {
                 selectedSection = requested
                 browserState.requestedLibrarySection = nil
             }
-            reloadDownloads()
         }
         .onChange(of: selectedSection) { _, _ in
             searchQuery = ""
-            if selectedSection == .downloads || selectedSection == .media { reloadDownloads() }
         }
-        .onChange(of: tracker.finishedCount) { _, _ in reloadDownloads() }
-        .onDisappear { Self.setWindowTrafficLights(hidden: false) }
         .confirmationDialog("Clear the whole Archive?", isPresented: $confirmClearArchive) {
             Button("Clear Archive", role: .destructive) { browserState.clearArchive() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes every archived tab from the list. Open tabs are not affected.")
-        }
-    }
-
-    /// The window's traffic lights are hidden while the Library occupies the sidebar.
-    static func setWindowTrafficLights(hidden: Bool) {
-        guard let window = NSApp.mainWindow ?? NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.styleMask.contains(.fullSizeContentView) }) else { return }
-        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.18
-            for type in buttons {
-                window.standardWindowButton(type)?.animator().alphaValue = hidden ? 0 : 1
-            }
-        }
-        for type in buttons {
-            window.standardWindowButton(type)?.isEnabled = !hidden
         }
     }
 
@@ -508,26 +486,12 @@ public struct SidebarLibraryView: View {
 
     // MARK: - Downloads List View
 
-    private func reloadDownloads() {
-        guard let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
-            downloadFiles = []
-            return
-        }
-        // Directory scan runs off the main actor; only the @State writes hop back.
-        Task.detached(priority: .userInitiated) {
-            let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
-            let files = (try? FileManager.default.contentsOfDirectory(at: downloadsURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])) ?? []
-            let dated: [(URL, Date)] = files.compactMap { url in
-                guard let v = try? url.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { return nil }
-                return (url, v.contentModificationDate ?? .distantPast)
-            }
-            let sorted = dated.sorted { $0.1 > $1.1 }.prefix(200).map { $0.0 }
-            let media = sorted.filter { Self.isMedia($0) }
-            await MainActor.run {
-                downloadFiles = sorted
-                mediaFiles = media
-            }
-        }
+    /// Media shown in the Media section: this browser's own completed downloads that are images, video or audio.
+    private var mediaFiles: [URL] {
+        tracker.records
+            .filter { $0.state == .completed && Self.isMedia($0.fileURL) && FileManager.default.fileExists(atPath: $0.filePath) }
+            .prefix(200)
+            .map { $0.fileURL }
     }
 
     nonisolated private static func isMedia(_ url: URL) -> Bool {
@@ -535,52 +499,80 @@ public struct SidebarLibraryView: View {
         return type.conforms(to: .image) || type.conforms(to: .movie) || type.conforms(to: .audio)
     }
 
-    private var recentDownloads: [URL] {
-        let inFlight = Set(tracker.active.map { $0.fileURL.path })
-        let files = downloadFiles.filter { !inFlight.contains($0.path) }
-        if searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
-            return Array(files.prefix(25))
+    private var visibleDownloadRecords: [DownloadRecord] {
+        let q = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        if q.isEmpty { return tracker.records }
+        return tracker.records.filter {
+            $0.fileName.lowercased().contains(q) || ($0.sourceHost?.lowercased().contains(q) ?? false)
         }
-        let q = searchQuery.lowercased()
-        return files.filter { $0.lastPathComponent.lowercased().contains(q) }
+    }
+
+    /// "Today", "Yesterday", "4 days ago", "1 week ago", "3 weeks ago", then the month.
+    private static func recencyTitle(for date: Date, now: Date = Date()) -> String {
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day ?? 0
+        switch days {
+        case ..<1: return "Today"
+        case 1: return "Yesterday"
+        case 2..<7: return "\(days) days ago"
+        case 7..<14: return "1 week ago"
+        case 14..<30: return "\(days / 7) weeks ago"
+        default: return date.formatted(.dateTime.month(.wide).year())
+        }
+    }
+
+    private var downloadGroups: [(title: String, items: [DownloadRecord])] {
+        var groups: [(title: String, items: [DownloadRecord])] = []
+        for record in visibleDownloadRecords {   // records are newest first
+            let title = Self.recencyTitle(for: record.date)
+            if let last = groups.indices.last, groups[last].title == title {
+                groups[last].items.append(record)
+            } else {
+                groups.append((title, [record]))
+            }
+        }
+        return groups
     }
 
     private var downloadsListView: some View {
-        let files = recentDownloads
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Recent Downloads")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(theme.foregroundColor)
-                Spacer()
-                Button {
-                    let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
-                    NSWorkspace.shared.open(downloadsURL)
-                } label: {
-                    Label("Open Folder", systemImage: "arrow.up.forward.square")
-                        .font(.system(size: 11))
+        let groups = downloadGroups
+        let query = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        let activeRows = tracker.active.filter {
+            query.isEmpty || $0.fileURL.lastPathComponent.lowercased().contains(query) || ($0.sourceHost?.lowercased().contains(query) ?? false)
+        }
+        return VStack(alignment: .leading, spacing: 4) {
+            if !activeRows.isEmpty {
+                libraryGroupTitle("Today")
+                ForEach(activeRows) { item in
+                    ActiveDownloadRow(item: item, theme: theme)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.effectiveAccentColor)
-            }
-            .padding(.horizontal, 4)
-
-            ForEach(tracker.active) { item in
-                ActiveDownloadRow(item: item, theme: theme)
             }
 
-            if files.isEmpty && tracker.active.isEmpty {
-                Text("No downloads found")
+            if groups.isEmpty && activeRows.isEmpty {
+                Text(tracker.records.isEmpty ? "No downloads yet" : "No matching downloads")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.secondaryForegroundColor)
                     .padding()
             } else {
-                ForEach(files, id: \.self) { fileURL in
-                    DownloadItemRow(fileURL: fileURL, theme: theme)
+                ForEach(groups, id: \.title) { group in
+                    libraryGroupTitle(group.title)
+                    ForEach(group.items) { record in
+                        DownloadItemRow(record: record, theme: theme) {
+                            tracker.remove(record)
+                        }
+                    }
                 }
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func libraryGroupTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(theme.secondaryForegroundColor)
+            .padding(.horizontal, 8)
+            .padding(.top, 6)
     }
 
     // MARK: - Boosts (Styles) List View
@@ -759,31 +751,36 @@ struct ArchivedTabRowItem: View {
 }
 
 struct DownloadItemRow: View {
-    let fileURL: URL
+    let record: DownloadRecord
     let theme: SpaceTheme
+    let onRemove: () -> Void
     @State private var isHovered: Bool = false
+
+    private var fileURL: URL { record.fileURL }
+    private var fileExists: Bool { FileManager.default.fileExists(atPath: record.filePath) }
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: fileURL.path))
+            Image(nsImage: NSWorkspace.shared.icon(forFile: record.filePath))
                 .resizable()
                 .frame(width: 22, height: 22)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(fileURL.lastPathComponent)
-                    .font(.system(size: 11.5, weight: .medium))
+                Text(record.fileName)
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(theme.foregroundColor)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                Text(fileSizeString)
+                Text(subtitle)
                     .font(.system(size: 10))
                     .foregroundStyle(theme.secondaryForegroundColor)
+                    .lineLimit(1)
             }
 
             Spacer()
 
-            if isHovered {
+            if isHovered && fileExists {
                 Button {
                     NSWorkspace.shared.activateFileViewerSelecting([fileURL])
                 } label: {
@@ -805,19 +802,22 @@ struct DownloadItemRow: View {
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture {
-            NSWorkspace.shared.open(fileURL)
+            if fileExists { NSWorkspace.shared.open(fileURL) }
+        }
+        .contextMenu {
+            if fileExists {
+                Button("Open") { NSWorkspace.shared.open(fileURL) }
+                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([fileURL]) }
+            }
+            Button("Remove from List", action: onRemove)
         }
     }
 
-    private var fileSizeString: String {
-        guard let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey]),
-              let size = values.fileSize else {
-            return ""
-        }
-        let bcf = ByteCountFormatter()
-        bcf.allowedUnits = [.useAll]
-        bcf.countStyle = .file
-        return bcf.string(fromByteCount: Int64(size))
+    private var subtitle: String {
+        if record.state == .failed { return "Download failed" }
+        if !fileExists { return "File moved or deleted" }
+        if let host = record.sourceHost { return "Download from \(host)" }
+        return "Download"
     }
 }
 
@@ -855,7 +855,7 @@ struct ActiveDownloadRow: View {
 
     private var statusText: String {
         let percent = Int((item.fraction * 100).rounded())
-        guard item.totalBytes > 0 else { return "Downloading…" }
+        guard item.totalBytes > 0 else { return item.sourceHost.map { "Downloading from \($0)…" } ?? "Downloading…" }
         let received = ByteCountFormatter.string(fromByteCount: item.receivedBytes, countStyle: .file)
         let total = ByteCountFormatter.string(fromByteCount: item.totalBytes, countStyle: .file)
         return "\(received) of \(total) · \(percent)%"

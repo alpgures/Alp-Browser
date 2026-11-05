@@ -22,7 +22,10 @@ public struct AlpBrowserApp: App {
                 .environmentObject(browserState)
                 .frame(minWidth: 780, minHeight: 520)
                 .ignoresSafeArea()
-                .background(AlpWindowAccessor())
+                .background(AlpWindowAccessor(
+                    trafficLightsVisible: (!browserState.isSidebarCollapsed || browserState.isSidebarHoverPeeking)
+                        && !browserState.isLibrarySheetPresented
+                ))
                 .onOpenURL { url in
                     browserState.handleCommandBarInput(url.absoluteString, openInNewTab: false)
                 }
@@ -368,7 +371,40 @@ enum AlpWindowChrome {
     }
 }
 
+extension AlpWindowChrome {
+    /// Shows or hides the close/minimise/zoom buttons. Full screen is left to the system, which keeps them
+    /// out of the way there; `didExitFullScreenNotification` re-applies the state afterwards.
+    static func setTrafficLights(visible: Bool, in window: NSWindow, animated: Bool) {
+        guard window.styleMask.contains(.titled), !window.styleMask.contains(.fullScreen) else { return }
+        let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { window.standardWindowButton($0) }
+        let target: CGFloat = visible ? 1 : 0
+        for button in buttons {
+            button.isEnabled = visible
+            if visible { button.isHidden = false }
+        }
+        guard animated else {
+            for button in buttons { button.alphaValue = target; button.isHidden = !visible }
+            return
+        }
+        // Fade only; the next layout notification (or non-animated apply) sets isHidden for the hidden state.
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            for button in buttons { button.animator().alphaValue = target }
+        }
+    }
+}
+
 private final class AlpWindowAccessorView: NSView {
+    /// Whether the traffic lights should show: only while the sidebar is revealed (and not covered by the Library).
+    var trafficLightsVisible = true {
+        didSet { applyTrafficLightVisibility(animated: true) }
+    }
+
+    func applyTrafficLightVisibility(animated: Bool) {
+        guard let window = self.window else { return }
+        AlpWindowChrome.setTrafficLights(visible: trafficLightsVisible, in: window, animated: animated)
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         NotificationCenter.default.removeObserver(self)
@@ -391,9 +427,11 @@ private final class AlpWindowAccessorView: NSView {
     @objc private func realignTrafficLights() {
         guard let window = self.window else { return }
         AlpWindowChrome.alignTrafficLights(in: window)
+        applyTrafficLightVisibility(animated: false)
         // Some of those notifications fire before AppKit finishes its own layout pass.
-        DispatchQueue.main.async { [weak window] in
+        DispatchQueue.main.async { [weak self, weak window] in
             if let window { AlpWindowChrome.alignTrafficLights(in: window) }
+            self?.applyTrafficLightVisibility(animated: false)
         }
     }
 
@@ -415,15 +453,21 @@ private final class AlpWindowAccessorView: NSView {
             window.center()
         }
         AlpWindowChrome.alignTrafficLights(in: window)
-        DispatchQueue.main.async { [weak window] in
+        applyTrafficLightVisibility(animated: false)
+        DispatchQueue.main.async { [weak self, weak window] in
             if let window { AlpWindowChrome.alignTrafficLights(in: window) }
+            self?.applyTrafficLightVisibility(animated: false)
         }
     }
 }
 
 struct AlpWindowAccessor: NSViewRepresentable {
+    /// Follows the sidebar's revealed state (shown, peeking) so the window buttons appear and vanish with it.
+    let trafficLightsVisible: Bool
+
     func makeNSView(context: Context) -> NSView {
         let view = AlpWindowAccessorView()
+        view.trafficLightsVisible = trafficLightsVisible
         DispatchQueue.main.async {
             if let window = view.window {
                 window.titleVisibility = .hidden
@@ -439,7 +483,10 @@ struct AlpWindowAccessor: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let view = nsView as? AlpWindowAccessorView, view.trafficLightsVisible != trafficLightsVisible else { return }
+        view.trafficLightsVisible = trafficLightsVisible
+    }
 }
 
 // MARK: - Mini Alp Standalone Window (⌘⌥N)

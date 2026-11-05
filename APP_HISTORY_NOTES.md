@@ -75,3 +75,11 @@ does not capture it.
 
 Note: one thread message contained a credential; it was deliberately omitted
 from this file.
+
+## Liquid Glass & Web Optics (Glisse Lesson — Nov 5)
+- **Real Refraction vs Frosted Blur**: Liquid Glass requires actual optical refraction at the rim (`SVG feDisplacementMap` bending backdrop light + chromatic fringe) with a legible interior, not just plain `backdrop-filter: blur()`.
+- **Target Surfaces**:
+  - Native App (macOS SwiftUI): Use native macOS materials / `.glassEffect` — do not attempt custom SVG optics in native Swift.
+  - Web Properties (`alpbrowser.app` and `alpbrowser.app/start`): Target surfaces for `glisse` (Kelvin Zhang, MIT). Verify npm package and license before importing.
+- **Engine Caveat**: SVG `backdrop-filter` refraction is Chromium-only. Inside WebKit (`WKWebView`), it degrades to a frosted blur. Verify all web surfaces in WKWebView and maintain native glass in-app.
+- **Performance Budget**: Snappiness is non-negotiable. Glass surfaces must remain few, small, and measured to avoid mobile/rendering slowdowns.

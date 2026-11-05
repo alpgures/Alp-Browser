@@ -129,16 +129,16 @@ public struct SidebarView: View {
             .help("Forward (⌘])")
 
             Button {
-                if let id = browserState.activeTabID {
-                    WebViewPool.shared.reload(in: id)
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                    browserState.isSiteControlCenterPresented.toggle()
                 }
             } label: {
-                Image(systemName: "arrow.clockwise")
+                Image(systemName: "ellipsis")
                     .font(.system(size: 11.5, weight: .semibold))
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(AlpIconButtonStyle(theme: theme))
-            .help("Reload (⌘R)")
+            .help("Site Options & Controls")
         }
         .frame(height: 26)
     }

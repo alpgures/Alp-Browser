@@ -22,10 +22,20 @@ public struct CommandBarView: View {
     struct CommandSuggestion: Identifiable {
         let id = UUID()
         let icon: String
+        let favicon: NSImage?
         let title: String
         let subtitle: String
         let badge: String
         let action: () -> Void
+
+        init(icon: String, favicon: NSImage? = nil, title: String, subtitle: String, badge: String, action: @escaping () -> Void) {
+            self.icon = icon
+            self.favicon = favicon
+            self.title = title
+            self.subtitle = subtitle
+            self.badge = badge
+            self.action = action
+        }
     }
 
     public init() {}
@@ -58,10 +68,12 @@ public struct CommandBarView: View {
             return tab.displayTitle.lowercased().contains(lower) || tab.urlString.lowercased().contains(lower)
         }
 
-        for tab in matchingTabs.prefix(trimmed.isEmpty ? 4 : 6) {
+        for tab in matchingTabs.prefix(trimmed.isEmpty ? 5 : 7) {
+            let fav = FaviconCache.shared.favicon(for: tab.urlString)
             list.append(
                 CommandSuggestion(
-                    icon: tab.isFavorite ? "star.fill" : (tab.isPinned ? "pin.fill" : "macwindow"),
+                    icon: tab.isFavorite ? "star.fill" : (tab.isPinned ? "pin.fill" : "globe"),
+                    favicon: fav,
                     title: tab.displayTitle,
                     subtitle: tab.simplifiedDomain,
                     badge: "Switch to Tab",
@@ -137,13 +149,13 @@ public struct CommandBarView: View {
             VStack(spacing: 0) {
                 // Search Input Box
                 HStack(spacing: 12) {
-                    Image(systemName: openInCurrentTab ? "globe" : "magnifyingglass")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(browserState.activeTheme.accentColor.swiftUIColor)
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
 
                     TextField("Search or Enter URL...", text: $query)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 17, weight: .medium))
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.white)
                         .focused($isInputFocused)
                         .onSubmit {
@@ -160,9 +172,13 @@ public struct CommandBarView: View {
                         }
                         .buttonStyle(.plain)
                     }
+
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white.opacity(0.5))
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 13)
                 .background(Color(red: 0.12, green: 0.12, blue: 0.15))
 
                 Divider().background(Color.white.opacity(0.12))
@@ -176,33 +192,61 @@ public struct CommandBarView: View {
                                 item.action()
                             } label: {
                                 HStack(spacing: 12) {
-                                    Image(systemName: item.icon)
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundStyle(isSelected ? .white : browserState.activeTheme.accentColor.swiftUIColor)
-                                        .frame(width: 22)
+                                    // Favicon or System Icon
+                                    Group {
+                                        if let fav = item.favicon {
+                                            Image(nsImage: fav)
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fit)
+                                                .frame(width: 16, height: 16)
+                                        } else {
+                                            Image(systemName: item.icon)
+                                                .font(.system(size: 13, weight: .medium))
+                                                .foregroundStyle(isSelected ? .white : browserState.activeTheme.accentColor.swiftUIColor)
+                                                .frame(width: 16, height: 16)
+                                        }
+                                    }
+                                    .frame(width: 20)
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.title)
                                             .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
                                             .foregroundStyle(.white)
                                             .lineLimit(1)
-                                        Text(item.subtitle)
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.white.opacity(0.6))
-                                            .lineLimit(1)
+                                        if !item.subtitle.isEmpty {
+                                            Text(item.subtitle)
+                                                .font(.system(size: 11))
+                                                .foregroundStyle(.white.opacity(0.6))
+                                                .lineLimit(1)
+                                        }
                                     }
 
                                     Spacer()
 
-                                    Text(item.badge)
-                                        .font(.system(size: 10.5, weight: .medium))
-                                        .foregroundStyle(isSelected ? .white : .white.opacity(0.55))
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 3)
-                                        .background(
-                                            Capsule()
-                                                .fill(Color.white.opacity(isSelected ? 0.22 : 0.08))
-                                        )
+                                    // Action Badge / Switch to Tab Indicator
+                                    if item.badge == "Switch to Tab" {
+                                        HStack(spacing: 6) {
+                                            Text("Switch to Tab")
+                                                .font(.system(size: 11, weight: .medium))
+                                                .foregroundStyle(isSelected ? .white : .white.opacity(0.6))
+
+                                            Image(systemName: "arrow.right")
+                                                .font(.system(size: 9.5, weight: .bold))
+                                                .foregroundStyle(isSelected ? browserState.activeTheme.primaryColor.swiftUIColor : .white)
+                                                .frame(width: 16, height: 16)
+                                                .background(isSelected ? Color.white : Color.white.opacity(0.14), in: Circle())
+                                        }
+                                    } else {
+                                        Text(item.badge)
+                                            .font(.system(size: 10.5, weight: .medium))
+                                            .foregroundStyle(isSelected ? .white : .white.opacity(0.55))
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 3)
+                                            .background(
+                                                Capsule()
+                                                    .fill(Color.white.opacity(isSelected ? 0.22 : 0.08))
+                                            )
+                                    }
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 8)

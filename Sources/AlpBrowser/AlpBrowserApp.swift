@@ -206,11 +206,18 @@ public final class AlpAppDelegate: NSObject, NSApplicationDelegate {
 
         // Set clean app icon on startup immediately
         let iconName = UserDefaults.standard.string(forKey: "alp_selected_icon") ?? "alp_browser_original"
-        let iconPath = Bundle.main.path(forResource: iconName, ofType: "icns")
-            ?? "/Users/alpgures/Documents/antigravity/arc2.0/Icons/\(iconName).icns"
-        if FileManager.default.fileExists(atPath: iconPath),
-           let img = NSImage(contentsOfFile: iconPath) {
-            NSApp.applicationIconImage = img
+        if iconName == "custom" {
+            if let customImg = AlpIconGenerator.loadCustomIconFromDisk()
+                ?? AlpIconGenerator.generateCustomIcon(config: BrowserState.shared.customIconConfig) {
+                NSApp.applicationIconImage = customImg
+            }
+        } else {
+            let iconPath = Bundle.main.path(forResource: iconName, ofType: "icns")
+                ?? "/Users/alpgures/Documents/antigravity/arc2.0/Icons/\(iconName).icns"
+            if FileManager.default.fileExists(atPath: iconPath),
+               let img = NSImage(contentsOfFile: iconPath) {
+                NSApp.applicationIconImage = img
+            }
         }
 
         NSApp.activate(ignoringOtherApps: true)

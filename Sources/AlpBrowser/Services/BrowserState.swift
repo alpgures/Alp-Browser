@@ -61,6 +61,7 @@ public final class BrowserState: ObservableObject {
     @Published public var isSyncConnected: Bool = false
     @Published public var toastMessage: String?
     @Published public var selectedIconName: String = "alp_browser_original"
+    @Published public var customIconConfig: CustomIconConfig = CustomIconConfig()
 
     public enum LibrarySection: String, CaseIterable, Identifiable {
         case archive = "Archive"
@@ -770,15 +771,42 @@ public final class BrowserState: ObservableObject {
         selectedIconName = iconName
         UserDefaults.standard.set(iconName, forKey: "alp_selected_icon")
 
-        let path = Bundle.main.path(forResource: iconName, ofType: "icns")
-            ?? "/Users/alpgures/Documents/antigravity/arc2.0/Icons/\(iconName).icns"
+        if iconName == "custom" {
+            if let customImg = AlpIconGenerator.generateCustomIcon(config: customIconConfig) {
+                AlpIconGenerator.applyIcon(image: customImg)
+            }
+            showToast("Custom app icon applied")
+        } else {
+            let path = Bundle.main.path(forResource: iconName, ofType: "icns")
+                ?? "/Users/alpgures/Documents/antigravity/arc2.0/Icons/\(iconName).icns"
 
-        if FileManager.default.fileExists(atPath: path),
-           let iconImg = NSImage(contentsOfFile: path) {
-            NSApp.applicationIconImage = iconImg
+            if FileManager.default.fileExists(atPath: path),
+               let iconImg = NSImage(contentsOfFile: path) {
+                AlpIconGenerator.applyIcon(image: iconImg)
+            }
+            showToast("App icon updated")
         }
-        showToast("App icon updated")
         scheduleSave()
+    }
+
+    public func updateCustomIconConfig(_ newConfig: CustomIconConfig) {
+        customIconConfig = newConfig
+        if selectedIconName == "custom" {
+            if let img = AlpIconGenerator.generateCustomIcon(config: newConfig) {
+                AlpIconGenerator.applyIcon(image: img)
+            }
+        }
+        scheduleSave()
+    }
+
+    public func selectCustomIconImage(url: URL) {
+        customIconConfig.customImagePath = url.path
+        selectAppIcon(named: "custom")
+    }
+
+    public func resetCustomIconToMountain() {
+        customIconConfig.customImagePath = nil
+        selectAppIcon(named: "custom")
     }
 
     // MARK: - UI Feedback
@@ -819,7 +847,8 @@ public final class BrowserState: ObservableObject {
             adBlockerEnabled: adBlockerEnabled,
             syncConfig: syncConfig,
             hasImportedFromArc: hasImportedFromArc,
-            selectedIconName: selectedIconName
+            selectedIconName: selectedIconName,
+            customIconConfig: customIconConfig
         )
     }
 
@@ -866,6 +895,7 @@ public final class BrowserState: ObservableObject {
                 self.syncConfig = store.syncConfig
                 self.hasImportedFromArc = store.hasImportedFromArc
                 self.selectedIconName = store.selectedIconName
+                self.customIconConfig = store.customIconConfig
                 return
             }
         }

@@ -749,6 +749,33 @@ public struct AlpSyncConfig: Codable, Equatable, Sendable {
     }
 }
 
+// MARK: - Custom App Icon Studio Configuration
+
+public struct CustomIconConfig: Codable, Equatable, Sendable {
+    public var startColorHex: String
+    public var endColorHex: String
+    public var bgMode: Int // 0: Dark, 1: Light, 2: Custom
+    public var bgColorHex: String
+    public var grain: Double
+    public var customImagePath: String?
+
+    public init(
+        startColorHex: String = "#FA6138",
+        endColorHex: String = "#D11AD9",
+        bgMode: Int = 0,
+        bgColorHex: String = "#1E1E1E",
+        grain: Double = 0.35,
+        customImagePath: String? = nil
+    ) {
+        self.startColorHex = startColorHex
+        self.endColorHex = endColorHex
+        self.bgMode = bgMode
+        self.bgColorHex = bgColorHex
+        self.grain = grain
+        self.customImagePath = customImagePath
+    }
+}
+
 // MARK: - Root Persisted Browser Store
 
 public struct PersistedBrowserStore: Codable {
@@ -765,6 +792,7 @@ public struct PersistedBrowserStore: Codable {
     public var syncConfig: AlpSyncConfig
     public var hasImportedFromArc: Bool
     public var selectedIconName: String
+    public var customIconConfig: CustomIconConfig
 
     public init(
         spaces: [AlpSpace] = [],
@@ -779,7 +807,8 @@ public struct PersistedBrowserStore: Codable {
         adBlockerEnabled: Bool = true,
         syncConfig: AlpSyncConfig = AlpSyncConfig(),
         hasImportedFromArc: Bool = false,
-        selectedIconName: String = "alp_browser_original"
+        selectedIconName: String = "alp_browser_original",
+        customIconConfig: CustomIconConfig = CustomIconConfig()
     ) {
         self.spaces = spaces
         self.favorites = favorites
@@ -794,5 +823,30 @@ public struct PersistedBrowserStore: Codable {
         self.syncConfig = syncConfig
         self.hasImportedFromArc = hasImportedFromArc
         self.selectedIconName = selectedIconName
+        self.customIconConfig = customIconConfig
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case spaces, favorites, activeSpaceID, styles, canvases, notes, archivedTabs
+        case autoArchiveHours, autoHibernateMinutes, adBlockerEnabled, syncConfig, hasImportedFromArc, selectedIconName
+        case customIconConfig
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.spaces = try container.decodeIfPresent([AlpSpace].self, forKey: .spaces) ?? []
+        self.favorites = try container.decodeIfPresent([TabItem].self, forKey: .favorites) ?? []
+        self.activeSpaceID = try container.decodeIfPresent(UUID.self, forKey: .activeSpaceID)
+        self.styles = try container.decodeIfPresent([PageMod].self, forKey: .styles) ?? []
+        self.canvases = try container.decodeIfPresent([AlpCanvas].self, forKey: .canvases) ?? []
+        self.notes = try container.decodeIfPresent([AlpNote].self, forKey: .notes) ?? []
+        self.archivedTabs = try container.decodeIfPresent([ArchivedTab].self, forKey: .archivedTabs) ?? []
+        self.autoArchiveHours = try container.decodeIfPresent(Double.self, forKey: .autoArchiveHours) ?? 12.0
+        self.autoHibernateMinutes = try container.decodeIfPresent(Double.self, forKey: .autoHibernateMinutes) ?? 5.0
+        self.adBlockerEnabled = try container.decodeIfPresent(Bool.self, forKey: .adBlockerEnabled) ?? true
+        self.syncConfig = try container.decodeIfPresent(AlpSyncConfig.self, forKey: .syncConfig) ?? AlpSyncConfig()
+        self.hasImportedFromArc = try container.decodeIfPresent(Bool.self, forKey: .hasImportedFromArc) ?? false
+        self.selectedIconName = try container.decodeIfPresent(String.self, forKey: .selectedIconName) ?? "alp_browser_original"
+        self.customIconConfig = try container.decodeIfPresent(CustomIconConfig.self, forKey: .customIconConfig) ?? CustomIconConfig()
     }
 }

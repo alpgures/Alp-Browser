@@ -18,6 +18,7 @@ mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 cp "${PROJECT_DIR}/Icons/alp_browser_original.icns" "${RESOURCES_DIR}/AppIcon.icns"
 cp "${PROJECT_DIR}/Icons/alp_browser_original.icns" "${RESOURCES_DIR}/alp_browser_original.icns"
 cp "${PROJECT_DIR}/Icons/alp_browser_white.icns" "${RESOURCES_DIR}/alp_browser_white.icns"
+cp "${PROJECT_DIR}/Icons/alp_mountain_mask.png" "${RESOURCES_DIR}/alp_mountain_mask.png"
 
 SDK_PATH="$(xcrun --show-sdk-path)"
 swiftc -O \

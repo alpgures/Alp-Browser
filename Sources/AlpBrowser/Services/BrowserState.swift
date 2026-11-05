@@ -596,7 +596,8 @@ public final class BrowserState: ObservableObject {
         }
 
         let resolvedURL = resolveInputToURLString(trimmed)
-        if openInNewTab || activeTabID == nil {
+        // A blank tab is filled in place rather than leaving an empty tab behind.
+        if (openInNewTab && activeTab?.isBlank != true) || activeTabID == nil {
             openNewTab(urlString: resolvedURL, title: trimmed, inBackground: false)
         } else if let currentID = activeTabID {
             navigateTab(id: currentID, to: resolvedURL)
@@ -642,14 +643,11 @@ public final class BrowserState: ObservableObject {
             markTabActive(newTab.id)
         }
         scheduleSave()
+        // A blank new tab has nothing to show: the command bar opens over it, as with ⌘T.
+        if newTab.isBlank && !inBackground && kind == .web {
+            openCommandBar(prefilledWithCurrentURL: false)
+        }
         return newTab
-    }
-
-    /// Opens a blank tab that shows the native start page (reuses the active tab if it is already blank).
-    @discardableResult
-    public func openStartTab() -> TabItem {
-        if let current = activeTab, current.isStartPage { return current }
-        return openNewTab(urlString: "about:blank", title: "New Tab")
     }
 
     public func navigateTab(id tabID: UUID, to urlString: String) {
@@ -1779,7 +1777,7 @@ public final class BrowserState: ObservableObject {
             let imported = try AlpSidebarImporter.importFromArc()
             let skippedNote = imported.skippedItems > 0 ? " (\(imported.skippedItems) skipped)" : ""
             if isFirstRun {
-                // First launch always lands on the onboarding start page, imported tabs or not.
+                // First launch always lands on a blank tab with the command bar open, imported tabs or not.
                 var firstRunSpaces = imported.spaces
                 let startTab = Self.makeStartTab()
                 firstRunSpaces[0].todayTabs.insert(startTab, at: 0)
@@ -1789,6 +1787,7 @@ public final class BrowserState: ObservableObject {
                 self.archivedTabs = imported.archivedTabs
                 self.activeSpaceID = firstRunSpaces.first?.id
                 self.hasImportedFromArc = true
+                isCommandBarPresented = true
                 scheduleSave()
                 showToast("Imported \(imported.totalImportedTabs) tabs and \(imported.archivedTabs.count) archived tabs from Arc\(skippedNote)")
                 return
@@ -1830,12 +1829,12 @@ public final class BrowserState: ObservableObject {
         }
     }
 
-    /// The onboarding page every first launch opens.
+    /// The blank tab every first launch opens; the command bar is presented over it.
     private static func makeStartTab() -> TabItem {
-        TabItem(title: "Start — Alp Browser", urlString: "https://alpbrowser.app/start")
+        TabItem(title: "New Tab", urlString: "about:blank")
     }
 
-    /// First-run fallback: Personal and Leisure spaces, with the onboarding start page open.
+    /// First-run fallback: Personal and Leisure spaces, with a blank tab and the command bar open.
     private func installDefaultSpaces() {
         let welcomeTab = Self.makeStartTab()
         let personalSpace = AlpSpace(
@@ -1852,6 +1851,7 @@ public final class BrowserState: ObservableObject {
         )
         self.spaces = [personalSpace, leisureSpace]
         self.activeSpaceID = personalSpace.id
+        isCommandBarPresented = true
         scheduleSave()
     }
 

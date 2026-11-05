@@ -432,15 +432,12 @@ public struct TabItem: Identifiable, Codable, Equatable, Hashable, Sendable {
         return normalizeURL(urlString) != normalizeURL(pinned)
     }
 
-    /// True for a blank web tab (new tab, `about:blank`, or the legacy onboarding URL), which the app
-    /// renders as the native start page instead of loading a web view.
-    public var isStartPage: Bool {
+    /// True for a brand-new web tab that has not navigated anywhere yet. It has no web view and renders
+    /// no page; the command bar is shown over it until the user picks a URL or search.
+    public var isBlank: Bool {
         guard kind == .web else { return false }
         let normalized = urlString.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.isEmpty
-            || normalized == "about:blank"
-            || normalized == "https://alpbrowser.app/start"
-            || normalized == "https://alpbrowser.app/start/"
+        return normalized.isEmpty || normalized == "about:blank"
     }
 
     public var isSecure: Bool {

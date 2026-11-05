@@ -214,9 +214,9 @@ public struct ViewportPaneView: View {
 
             switch tab.kind {
             case .web:
-                if tab.isStartPage {
-                    // Blank tabs never create a web view: the native page is instant and fully offline.
-                    StartPageView()
+                if tab.isBlank {
+                    // A blank tab creates no web view and draws no page; the command bar sits over it.
+                    Color.clear
                 } else {
                     WebViewRepresentable(
                         tab: tab,

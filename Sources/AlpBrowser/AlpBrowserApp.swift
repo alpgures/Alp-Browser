@@ -37,11 +37,6 @@ public struct AlpBrowserApp: App {
             }
 
             CommandGroup(replacing: .newItem) {
-                Button("New Tab Page") {
-                    browserState.openStartTab()
-                }
-                .keyboardShortcut("t", modifiers: [.command, .option])
-
                 Button("Command Bar / New Tab") {
                     browserState.openCommandBar(prefilledWithCurrentURL: false)
                 }

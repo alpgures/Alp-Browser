@@ -174,7 +174,7 @@ public struct SidebarView: View {
                             .frame(width: 13, height: 13)
                     }
 
-                    Text(browserState.activeTab.flatMap { $0.isStartPage ? nil : $0.simplifiedDomain } ?? "Search or Enter URL...")
+                    Text(browserState.activeTab.flatMap { $0.isBlank ? nil : $0.simplifiedDomain } ?? "Search or Enter URL...")
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(theme.foregroundColor.opacity(0.92))
                         .lineLimit(1)

@@ -383,7 +383,7 @@ struct CollapsedNavStripView: View {
         let tab: TabItem?
         let theme: SpaceTheme
 
-        private var isWeb: Bool { tab.map { $0.kind == .web && !$0.isStartPage } ?? false }
+        private var isWeb: Bool { tab.map { $0.kind == .web && !$0.isBlank } ?? false }
 
         var body: some View {
             HStack(spacing: 8) {
@@ -464,7 +464,7 @@ struct CollapsedNavStripView: View {
                             .truncationMode(.tail)
                     }
                 }
-            } else if let tab, !tab.isStartPage {
+            } else if let tab, !tab.isBlank {
                 Text(tab.displayTitle)
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(theme.foregroundColor.opacity(0.95))

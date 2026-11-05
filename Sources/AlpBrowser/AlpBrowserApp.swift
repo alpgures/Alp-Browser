@@ -24,6 +24,11 @@ public struct AlpBrowserApp: App {
                 .background(AlpWindowAccessor())
         }
         .windowStyle(.hiddenTitleBar)
+
+        Settings {
+            SettingsView()
+                .environmentObject(browserState)
+        }
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings...") {
@@ -220,6 +225,39 @@ public final class AlpAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        NSApp.activate(ignoringOtherApps: true)
+
+        // Ensure "Settings..." is explicitly wired in the macOS Alp Browser menu
+        DispatchQueue.main.async { [weak self] in
+            self?.setupApplicationMenu()
+        }
+    }
+
+    private func setupApplicationMenu() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+        guard let appMenuItem = mainMenu.items.first, let appMenu = appMenuItem.submenu else { return }
+
+        let hasSettings = appMenu.items.contains { item in
+            item.action == #selector(openSettingsAction) || (item.keyEquivalent == "," && item.keyEquivalentModifierMask == .command)
+        }
+        if !hasSettings {
+            let settingsItem = NSMenuItem(
+                title: "Settings...",
+                action: #selector(openSettingsAction),
+                keyEquivalent: ","
+            )
+            settingsItem.target = self
+            if appMenu.items.count > 1 {
+                appMenu.insertItem(settingsItem, at: 1)
+                appMenu.insertItem(NSMenuItem.separator(), at: 2)
+            } else {
+                appMenu.addItem(settingsItem)
+            }
+        }
+    }
+
+    @objc private func openSettingsAction() {
+        BrowserState.shared.isSettingsPresented = true
         NSApp.activate(ignoringOtherApps: true)
     }
 

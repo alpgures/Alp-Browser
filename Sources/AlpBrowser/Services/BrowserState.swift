@@ -360,6 +360,28 @@ public final class BrowserState: ObservableObject {
         scheduleSave()
     }
 
+    public func toggleFolderExpanded(folderID: UUID) {
+        guard let sIdx = activeSpaceIndex else { return }
+        spaces[sIdx].pinnedNodes = toggleFolder(in: spaces[sIdx].pinnedNodes, folderID: folderID)
+        scheduleSave()
+    }
+
+    private func toggleFolder(in nodes: [SidebarNode], folderID: UUID) -> [SidebarNode] {
+        nodes.map { node in
+            switch node {
+            case .tab:
+                return node
+            case .folder(var f):
+                if f.id == folderID {
+                    f.isExpanded.toggle()
+                } else {
+                    f.children = toggleFolder(in: f.children, folderID: folderID)
+                }
+                return .folder(f)
+            }
+        }
+    }
+
     public func moveTabIntoFolder(tabID: UUID, folderID: UUID) {
         guard let sIdx = activeSpaceIndex, let tab = findTab(id: tabID) else { return }
         spaces[sIdx].todayTabs.removeAll { $0.id == tabID }

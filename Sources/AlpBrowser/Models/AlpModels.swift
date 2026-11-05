@@ -379,6 +379,10 @@ public struct TabItem: Identifiable, Codable, Equatable, Hashable, Sendable {
         return normalizeURL(urlString) != normalizeURL(pinned)
     }
 
+    public var isSecure: Bool {
+        urlString.lowercased().hasPrefix("https://")
+    }
+
     public var faviconURL: URL? {
         guard kind == .web, let url = URL(string: urlString), let host = url.host else { return nil }
         return URL(string: "https://www.google.com/s2/favicons?domain=\(host)&sz=64")
@@ -402,7 +406,7 @@ public struct FolderItem: Identifiable, Codable, Equatable, Hashable, Sendable {
     public init(
         id: UUID = UUID(),
         title: String,
-        isExpanded: Bool = true,
+        isExpanded: Bool = false,
         children: [SidebarNode] = []
     ) {
         self.id = id

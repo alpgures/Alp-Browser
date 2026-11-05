@@ -100,6 +100,15 @@ public final class TrackpadGestureManager: ObservableObject {
         case .swipe:
             let state = BrowserState.shared
             if isLocationInSidebar(event) {
+                if state.isLibrarySheetPresented {
+                    if event.deltaX < 0 {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                            state.isLibrarySheetPresented = false
+                        }
+                        performHaptic()
+                    }
+                    return nil
+                }
                 if event.deltaX < 0 {
                     spaceTransitionDirection = 1
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
@@ -107,11 +116,19 @@ public final class TrackpadGestureManager: ObservableObject {
                     }
                     performHaptic()
                 } else if event.deltaX > 0 {
-                    spaceTransitionDirection = -1
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
-                        state.switchToNextSpace(forward: false)
+                    let currentIdx = state.activeSpaceIndex ?? 0
+                    if currentIdx == 0 {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                            state.isLibrarySheetPresented = true
+                        }
+                        performHaptic()
+                    } else {
+                        spaceTransitionDirection = -1
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                            state.switchToNextSpace(forward: false)
+                        }
+                        performHaptic()
                     }
-                    performHaptic()
                 }
                 return nil
             } else {
@@ -235,7 +252,7 @@ public final class TrackpadGestureManager: ObservableObject {
         let spaceCount = state.spaces.count
         guard spaceCount > 0 else { return }
         let currentIdx = state.activeSpaceIndex ?? 0
-        let threshold: CGFloat = 65.0
+        let threshold: CGFloat = 42.0
 
         if state.isLibrarySheetPresented {
             // Library drawer is already revealed: swiping left slides it closed
@@ -333,10 +350,9 @@ public final class TrackpadGestureManager: ObservableObject {
     }
 
     private func isLocationInSidebar(_ event: NSEvent) -> Bool {
-        guard let window = event.window else { return false }
-        let location = event.locationInWindow
         let sidebarWidth = BrowserState.shared.isSidebarCollapsed ? 0 : BrowserState.shared.sidebarWidth
-        return location.x <= sidebarWidth && location.y >= 0 && location.y <= window.frame.height
+        let x = event.locationInWindow.x
+        return x >= 0 && x <= sidebarWidth
     }
 
     private func performHaptic() {

@@ -47,6 +47,8 @@ cat > "${CONTENTS_DIR}/Info.plist" << 'EOF'
     <string>AlpBrowser</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.alpgures.alpbrowser</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -57,25 +59,59 @@ cat > "${CONTENTS_DIR}/Info.plist" << 'EOF'
     <string>Alp Browser</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>MacOSX</string>
+    </array>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
     <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>HTTP URL</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>http</string>
+                <string>https</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 EOF
 
-echo "APPL????" > "${CONTENTS_DIR}/PkgInfo"
+printf "APPL????" > "${CONTENTS_DIR}/PkgInfo"
 
-codesign --force --deep --sign - "${APP_BUNDLE}"
+# Clean any quarantine and provenance extended attributes
+xattr -cr "${APP_BUNDLE}"
+
+# Ad-hoc sign with entitlements
+codesign --force --deep --sign - --entitlements "${PROJECT_DIR}/scripts/entitlements.plist" "${APP_BUNDLE}"
+
+# Clear quarantine again after signing
+xattr -cr "${APP_BUNDLE}"
+
+# Register bundle with macOS LaunchServices
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "${APP_BUNDLE}"
 
 echo "Successfully built and packaged clean-room: ${APP_BUNDLE}"

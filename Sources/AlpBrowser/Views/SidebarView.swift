@@ -500,6 +500,7 @@ struct FolderRowItemView: View {
             Button {
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
                     isExpanded.toggle()
+                    browserState.toggleFolderExpanded(folderID: folder.id)
                 }
             } label: {
                 HStack(spacing: 6) {
@@ -609,12 +610,12 @@ struct TabRowItemView: View {
             }
 
             // Close / Unload Button:
-            // - When on tab (isSelected):
-            //   - Retained member (isPinned): shows minus sign ("minus")!
-            //   - Temporary tab (!isPinned): shows close X ("xmark")!
-            // - When hovering on unfocused tab (!isSelected && isHovered): shows close X ("xmark")!
+            // - Active retained tab (isSelected && isPinned): shows minus sign ("minus") to unload.
+            // - Temporary tab (!isPinned): shows close X ("xmark") only when hovered.
+            // - Inactive tab (isHovered): shows close X ("xmark").
             let showMinus = isSelected && isPinned
-            if isHovered || isSelected {
+            let showTrailingButton = (isSelected && isPinned) || isHovered
+            if showTrailingButton {
                 Button {
                     browserState.handleTabTrailingButtonAction(for: tab)
                 } label: {

@@ -27,6 +27,7 @@ public struct MainBrowserWindow: View {
                     let currentWidth = browserState.isLibrarySheetPresented ? max(browserState.sidebarWidth, 330) : browserState.sidebarWidth
                     SidebarView()
                         .frame(width: currentWidth)
+                        .clipped()
                         .animation(.spring(response: 0.30, dampingFraction: 0.85), value: browserState.isLibrarySheetPresented)
                         .transition(.move(edge: .leading).combined(with: .opacity))
 
@@ -40,6 +41,7 @@ public struct MainBrowserWindow: View {
                     .padding(.trailing, 8)
                     .padding(.leading, browserState.isSidebarCollapsed ? 8 : 2)
             }
+            .ignoresSafeArea(.all, edges: .top)
 
             // 3. Collapsed Sidebar Edge Hover Trigger
             if browserState.isSidebarCollapsed {
@@ -296,7 +298,7 @@ struct SidebarResizeHandle: View {
                         dragStartWidth = sidebarWidth
                     }
                     let proposed = dragStartWidth + value.translation.width
-                    let clamped = min(max(proposed, 170), 460)
+                    let clamped = min(max(proposed, 200), 460)
                     sidebarWidth = clamped
                 }
                 .onEnded { _ in

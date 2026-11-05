@@ -42,6 +42,32 @@ public struct WebViewRepresentable: NSViewRepresentable {
 final class ClickTrackingContainerView: NSView {
     weak var hostedWebView: WKWebView?
     var onFocusRequest: (() -> Void)?
+    private var mouseMonitor: Any?
+
+    /// WKWebView consumes mouse-downs, so the container watches for them with a local monitor
+    /// (the event is passed through untouched) and asks to become the focused split pane.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        removeMonitor()
+        guard window != nil else { return }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            guard let self, event.window === self.window else { return event }
+            let point = self.convert(event.locationInWindow, from: nil)
+            if self.bounds.contains(point) { self.onFocusRequest?() }
+            return event
+        }
+    }
+
+    private func removeMonitor() {
+        if let monitor = mouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseMonitor = nil
+        }
+    }
+
+    deinit {
+        if let monitor = mouseMonitor { NSEvent.removeMonitor(monitor) }
+    }
 
     func attachWebView(_ webView: WKWebView) {
         subviews.forEach { $0.removeFromSuperview() }
@@ -55,6 +81,123 @@ final class ClickTrackingContainerView: NSView {
             webView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         hostedWebView = webView
+    }
+}
+
+// MARK: - Drop target for tabs dragged onto a split pane
+
+/// Transparent AppKit layer above a split pane that accepts a tab dragged from the sidebar.
+/// It exists because the pane's content (a WKWebView, a text view) registers its own drag types and would
+/// otherwise take the drop itself, e.g. by inserting the tab's id as text. The layer is invisible to the
+/// mouse (hit-testing returns nil) except while a sidebar tab drag is in progress with the button held.
+struct PaneTabDropTarget: NSViewRepresentable {
+    /// True when dropping this tab on the pane makes sense (not the pane's own tab, and it exists).
+    let accepts: (UUID) -> Bool
+    let onDropTab: (UUID) -> Void
+
+    func makeNSView(context: Context) -> TabDropTargetView {
+        let view = TabDropTargetView()
+        view.accepts = accepts
+        view.onDropTab = onDropTab
+        return view
+    }
+
+    func updateNSView(_ view: TabDropTargetView, context: Context) {
+        view.accepts = accepts
+        view.onDropTab = onDropTab
+    }
+}
+
+final class TabDropTargetView: NSView {
+    var accepts: ((UUID) -> Bool)?
+    var onDropTab: ((UUID) -> Void)?
+    private var mouseMonitor: Any?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.string])
+        wantsLayer = true
+        layer?.cornerRadius = 11
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let monitor = mouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseMonitor = nil
+        }
+        guard window != nil else { return }
+        // A fresh click cannot happen during a drag, so a drag id still set at mouse-down is stale
+        // (the drag was cancelled). Clear it before hit-testing so the layer never blocks clicks.
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+            BrowserState.shared.sidebarDragTabID = nil
+            return event
+        }
+    }
+
+    deinit {
+        if let monitor = mouseMonitor { NSEvent.removeMonitor(monitor) }
+    }
+
+    private var isTabDragActive: Bool {
+        BrowserState.shared.sidebarDragTabID != nil && (NSEvent.pressedMouseButtons & 1) != 0
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isTabDragActive ? super.hitTest(point) : nil
+    }
+
+    private func draggedTabID(_ sender: NSDraggingInfo) -> UUID? {
+        guard let string = sender.draggingPasteboard.string(forType: .string),
+              let id = UUID(uuidString: string.trimmingCharacters(in: .whitespacesAndNewlines)),
+              accepts?(id) == true else { return nil }
+        return id
+    }
+
+    private func setHighlighted(_ on: Bool) {
+        layer?.backgroundColor = on ? NSColor.controlAccentColor.withAlphaComponent(0.22).cgColor : nil
+        layer?.borderColor = NSColor.controlAccentColor.cgColor
+        layer?.borderWidth = on ? 2 : 0
+    }
+
+    private func operation(for sender: NSDraggingInfo) -> NSDragOperation {
+        let mask = sender.draggingSourceOperationMask
+        for candidate in [NSDragOperation.generic, .move, .copy] where mask.contains(candidate) { return candidate }
+        return []
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard draggedTabID(sender) != nil else { return [] }
+        setHighlighted(true)
+        return operation(for: sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        draggedTabID(sender) != nil ? operation(for: sender) : []
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        setHighlighted(false)
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        draggedTabID(sender) != nil
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        setHighlighted(false)
+        BrowserState.shared.sidebarDragTabID = nil
+        guard let id = draggedTabID(sender) else { return false }
+        onDropTab?(id)
+        return true
+    }
+
+    override func concludeDragOperation(_ sender: NSDraggingInfo?) {
+        setHighlighted(false)
     }
 }
 
@@ -116,6 +259,12 @@ public struct ViewportPaneView: View {
                 ViewportZapperBannerView(tabID: tab.id)
             }
 
+            // A tab dragged from the sidebar onto this pane replaces the pane's tab, or (single viewport) starts a split.
+            PaneTabDropTarget(
+                accepts: { id in id != tab.id && browserState.findTab(id: id) != nil },
+                onDropTab: { id in browserState.dropSidebarTab(id, onPane: tab.id) }
+            )
+
             // Split View Mini Header
             if isSplitMode {
                 HStack(spacing: 8) {
@@ -131,13 +280,13 @@ public struct ViewportPaneView: View {
                     Spacer()
 
                     Button {
-                        browserState.removeSplitPane()
+                        browserState.removeSplitPane(tabID: tab.id)
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 10, weight: .bold))
                     }
                     .buttonStyle(.plain)
-                    .help("Close Split View")
+                    .help("Remove this pane from Split View")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)

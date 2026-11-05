@@ -16,6 +16,9 @@ public struct SidebarView: View {
     @State private var renamingTabID: UUID?
     @State private var renameDraft: String = ""
     @State private var isHoveringUrlPill = false
+    @State private var renamingSpaceID: UUID?
+    @State private var spaceNameDraft: String = ""
+    @State private var spacePendingDeletion: AlpSpace?
 
     private var theme: SpaceTheme {
         browserState.activeTheme
@@ -80,6 +83,37 @@ public struct SidebarView: View {
             }
         }
         .animation(.spring(response: 0.30, dampingFraction: 0.85), value: browserState.isLibrarySheetPresented)
+        .alert("Rename Space", isPresented: Binding(
+            get: { renamingSpaceID != nil },
+            set: { if !$0 { renamingSpaceID = nil } }
+        )) {
+            TextField("Space name", text: $spaceNameDraft)
+            Button("Rename") {
+                if let id = renamingSpaceID { browserState.renameSpace(id: id, to: spaceNameDraft) }
+                renamingSpaceID = nil
+            }
+            Button("Cancel", role: .cancel) { renamingSpaceID = nil }
+        }
+        .confirmationDialog(
+            "Delete “\(spacePendingDeletion?.title ?? "")”?",
+            isPresented: Binding(
+                get: { spacePendingDeletion != nil },
+                set: { if !$0 { spacePendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Space", role: .destructive) {
+                if let space = spacePendingDeletion {
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                        browserState.deleteSpace(id: space.id)
+                    }
+                }
+                spacePendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) { spacePendingDeletion = nil }
+        } message: {
+            Text("Its open tabs are saved to the Archive. Its pinned tabs and folders are removed.")
+        }
     }
 
     // MARK: - 1. Top Navigation Row
@@ -230,6 +264,19 @@ public struct SidebarView: View {
                 ) {
                     browserState.selectTab(tab.id)
                 }
+                .contextMenu {
+                    Button("Remove from Favorites") {
+                        browserState.toggleFavorite(tabID: tab.id)
+                    }
+                    Button("Copy URL") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(tab.urlString, forType: .string)
+                    }
+                    Divider()
+                    Button("Unload Tab") {
+                        browserState.handleTabTrailingButtonAction(for: tab)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -281,7 +328,7 @@ public struct SidebarView: View {
 
     // MARK: - 6. Bottom Space Switcher & Library Bar (Stable during sidebar resizing)
 
-    /// Arc-style bottom bar: a single Library button on the leading edge,
+    /// Bottom bar: a single Library button on the leading edge,
     /// the space switcher centred (active space shows its icon, inactive
     /// spaces collapse to dimmed dots that reveal their icon on hover), and a
     /// lone "+" on the trailing edge. No settings gear, no menu chevron.
@@ -300,9 +347,19 @@ public struct SidebarView: View {
                         }
                     }
                     .contextMenu {
+                        Button("Rename Space…") {
+                            spaceNameDraft = space.title
+                            renamingSpaceID = space.id
+                        }
                         Button("Edit Theme…") {
                             browserState.switchToSpace(at: index)
                             browserState.isThemePickerPresented = true
+                        }
+                        if browserState.spaces.count > 1 {
+                            Divider()
+                            Button("Delete Space…", role: .destructive) {
+                                spacePendingDeletion = space
+                            }
                         }
                     }
                 }
@@ -329,14 +386,12 @@ public struct SidebarView: View {
                 // Trailing: "+" (New Space / Folder / Easel / Note)
                 Menu {
                     Button("New Space") {
-                        let newSpace = AlpSpace(
-                            title: "Space \(browserState.spaces.count + 1)",
-                            iconEmoji: "🪐",
-                            theme: .auroraMesh
-                        )
-                        browserState.spaces.append(newSpace)
-                        browserState.activeSpaceID = newSpace.id
-                        browserState.scheduleSave()
+                        withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                            browserState.createSpace()
+                        }
+                    }
+                    Button("New Folder") {
+                        browserState.createFolder()
                     }
                     Button("New Easel") {
                         browserState.createNewCanvas()
@@ -366,7 +421,7 @@ public struct SidebarView: View {
     }
 }
 
-// MARK: - Arc-style Space Switcher Icon
+// MARK: - Space Switcher Icon
 
 /// Active space: its emoji at full strength. Inactive space: a small dimmed
 /// dot that morphs into the space's emoji while hovered.
@@ -426,7 +481,7 @@ struct SidebarSpaceContentView: View {
                 let currentSpace = browserState.activeSpace
 
                 VStack(alignment: .leading, spacing: 3) {
-                    // Space Title Header matching Arc (e.g. "🧌 Personal")
+                    // Space title header (e.g. "🧌 Personal")
                     HStack(spacing: 6) {
                         Text(currentSpace.iconEmoji)
                             .font(.system(size: 13))
@@ -531,6 +586,8 @@ struct FolderRowItemView: View {
 
     @State private var isExpanded: Bool
     @State private var isTargetedForDrop = false
+    @State private var isRenaming = false
+    @State private var nameDraft = ""
 
     init(folder: FolderItem, renamingTabID: Binding<UUID?>, renameDraft: Binding<String>, theme: SpaceTheme) {
         self.folder = folder
@@ -592,6 +649,20 @@ struct FolderRowItemView: View {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .stroke(isTargetedForDrop ? theme.effectiveAccentColor : Color.clear, lineWidth: 1.5)
         )
+        .contextMenu {
+            Button("Rename Folder…") {
+                nameDraft = folder.title
+                isRenaming = true
+            }
+            Button("Delete Folder (Keep Tabs)", role: .destructive) {
+                browserState.deleteFolder(id: folder.id)
+            }
+        }
+        .alert("Rename Folder", isPresented: $isRenaming) {
+            TextField("Folder name", text: $nameDraft)
+            Button("Rename") { browserState.renameFolder(id: folder.id, to: nameDraft) }
+            Button("Cancel", role: .cancel) {}
+        }
         .onDrop(of: [UTType.plainText.identifier, UTType.text.identifier], isTargeted: $isTargetedForDrop) { providers in
             guard let provider = providers.first else { return false }
             _ = provider.loadObject(ofClass: NSString.self) { string, _ in
@@ -714,7 +785,8 @@ struct TabRowItemView: View {
             browserState.selectTab(tab.id)
         }
         .onDrag {
-            NSItemProvider(object: tab.id.uuidString as NSString)
+            browserState.sidebarDragTabID = tab.id
+            return NSItemProvider(object: tab.id.uuidString as NSString)
         }
         .onDrop(of: [UTType.plainText.identifier, UTType.text.identifier], isTargeted: $isTargetedForDrop) { providers in
             guard let provider = providers.first else { return false }
@@ -741,8 +813,23 @@ struct TabRowItemView: View {
             return true
         }
         .contextMenu {
+            if tab.kind == .web {
+                Button("Add to Favorites") {
+                    browserState.toggleFavorite(tabID: tab.id)
+                }
+            }
             Button(isRetained ? "Move to Active Tabs" : "Pin Tab") {
                 browserState.togglePinTab(id: tab.id)
+            }
+            if tab.hasNavigatedAwayFromPin {
+                Button("Back to Pinned Page") {
+                    browserState.resetPinnedTabToHome(id: tab.id)
+                }
+            }
+            if tab.kind == .web {
+                Button("Open in Split View") {
+                    browserState.addSplitPane(withTabID: tab.id)
+                }
             }
             Button("Rename Tab") {
                 renameDraft = tab.displayTitle

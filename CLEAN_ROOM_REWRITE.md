@@ -26,7 +26,7 @@ differentiation comes LATER — do not restyle now.
    must be original code. Same for `ArcAssetLoader.swift` (no Arc assets).
 5. **Rename Arc* symbols.** `ArcBrowser` → `AlpBrowser`, `ArcModels`,
    `ArcSidebarImporter`, `ArcOCIBridge`, etc. Update Package.swift targets.
-   Keep the Python sync daemon (`Server/oci_arc_cloud_daemon.py`) working —
+   Keep the Python sync daemon (`Server/alp_cloud_daemon.py`) working —
    update the ObjC bridge it talks to, or rewrite the bridge in Swift.
 
 ## Feature parity checklist (all must survive the rewrite)

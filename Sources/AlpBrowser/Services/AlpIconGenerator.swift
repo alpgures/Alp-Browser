@@ -14,6 +14,13 @@ import Foundation
 @MainActor
 public enum AlpIconGenerator {
 
+    /// Loads a bundled `.icns` by resource name from the app bundle only.
+    /// Returns nil (caller keeps the current icon) when running unbundled, e.g. `swift run`.
+    public static func bundledIcon(named name: String) -> NSImage? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "icns") else { return nil }
+        return NSImage(contentsOf: url)
+    }
+
     // MARK: - Preset Gradients
 
     public struct GradientPreset: Identifiable {
@@ -122,14 +129,7 @@ public enum AlpIconGenerator {
         let mh = 824
 
         // Locate mask PNG
-        var maskURL = Bundle.main.url(forResource: "alp_mountain_mask", withExtension: "png")
-        if maskURL == nil || !FileManager.default.fileExists(atPath: maskURL!.path) {
-            let fallback = URL(fileURLWithPath: "/Users/alpgures/Documents/antigravity/arc2.0/Icons/alp_mountain_mask.png")
-            if FileManager.default.fileExists(atPath: fallback.path) {
-                maskURL = fallback
-            }
-        }
-        guard let validURL = maskURL,
+        guard let validURL = Bundle.main.url(forResource: "alp_mountain_mask", withExtension: "png"),
               let maskImg = NSImage(contentsOf: validURL),
               let maskCg = maskImg.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
@@ -244,12 +244,6 @@ public enum AlpIconGenerator {
         let bundlePath = Bundle.main.bundlePath
         if bundlePath.hasSuffix(".app") {
             NSWorkspace.shared.setIcon(image, forFile: bundlePath, options: [])
-        }
-
-        // Also update project build bundle if present
-        let localAppPath = "/Users/alpgures/Documents/antigravity/arc2.0/Alp Browser.app"
-        if FileManager.default.fileExists(atPath: localAppPath) {
-            NSWorkspace.shared.setIcon(image, forFile: localAppPath, options: [])
         }
 
         // Try /Applications if installed

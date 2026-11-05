@@ -250,19 +250,16 @@ public final class AlpExtensionManager: ObservableObject {
 
     // MARK: - Extension Lifecycle
 
+    /// Least privilege: an extension is granted only what its manifest declares as required
+    /// (`permissions` and `host_permissions`). Optional permissions and optional host patterns are
+    /// never granted here, and anything not declared stays ungranted.
     @available(macOS 15.4, *)
-    private func grantAllPermissions(to context: WKWebExtensionContext, for webExt: WKWebExtension) {
-        var perms: [WKWebExtension.Permission: Date] = [:]
-        for p in webExt.requestedPermissions {
-            perms[p] = Date.distantFuture
-        }
-        context.grantedPermissions = perms
+    private func grantDeclaredPermissions(to context: WKWebExtensionContext, for webExt: WKWebExtension) {
+        let declared = webExt.requestedPermissions.subtracting(webExt.optionalPermissions)
+        context.grantedPermissions = Dictionary(uniqueKeysWithValues: declared.map { ($0, Date.distantFuture) })
 
-        var patterns: [WKWebExtension.MatchPattern: Date] = [:]
-        for pattern in webExt.requestedPermissionMatchPatterns {
-            patterns[pattern] = Date.distantFuture
-        }
-        context.grantedPermissionMatchPatterns = patterns
+        let declaredPatterns = webExt.requestedPermissionMatchPatterns.subtracting(webExt.optionalPermissionMatchPatterns)
+        context.grantedPermissionMatchPatterns = Dictionary(uniqueKeysWithValues: declaredPatterns.map { ($0, Date.distantFuture) })
     }
 
     public func loadAllInstalledExtensions() async {
@@ -274,7 +271,7 @@ public final class AlpExtensionManager: ObservableObject {
             do {
                 let webExt = try await WKWebExtension(resourceBaseURL: dirURL)
                 let context = WKWebExtensionContext(for: webExt)
-                grantAllPermissions(to: context, for: webExt)
+                grantDeclaredPermissions(to: context, for: webExt)
                 try controller.load(context)
                 activeContexts[item.id] = context
             } catch {
@@ -340,7 +337,7 @@ public final class AlpExtensionManager: ObservableObject {
             if let displayName = webExt.displayName, !displayName.isEmpty { name = displayName }
             if let displayVer = webExt.displayVersion, !displayVer.isEmpty { version = displayVer }
             let context = WKWebExtensionContext(for: webExt)
-            grantAllPermissions(to: context, for: webExt)
+            grantDeclaredPermissions(to: context, for: webExt)
             try? controller.load(context)
             activeContexts[extID] = context
         }
@@ -359,6 +356,74 @@ public final class AlpExtensionManager: ObservableObject {
         saveRegistry()
     }
 
+    // MARK: - Chrome Web Store Install
+
+    /// Accepts a Web Store detail link or a bare 32-letter extension ID, downloads the
+    /// packed extension, verifies its CRX signature, unpacks it and installs it like an unpacked folder.
+    @discardableResult
+    public func installFromWebStore(_ input: String) async -> Bool {
+        guard let range = input.range(of: "[a-p]{32}", options: .regularExpression) else {
+            lastErrorMessage = "Enter a Chrome Web Store link or a 32-letter extension ID."
+            return false
+        }
+        let extensionID = String(input[range])
+        let query = "id%3D\(extensionID)%26installsource%3Dondemand%26uc"
+        guard let url = URL(string: "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=120.0&acceptformat=crx2,crx3&x=\(query)") else { return false }
+
+        isExtensionLoading = true
+        defer { isExtensionLoading = false }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard (response as? HTTPURLResponse)?.statusCode == 200, !data.isEmpty else {
+                lastErrorMessage = "That extension could not be downloaded."
+                return false
+            }
+            let workDir = FileManager.default.temporaryDirectory.appendingPathComponent("alp-crx-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: workDir) }
+
+            let unpacked = workDir.appendingPathComponent("unpacked", isDirectory: true)
+            // Verify the CRX signature (and that the signing key matches the requested ID) before
+            // anything is scanned, unzipped or installed. A failure throws a CRXVerificationError.
+            // Order: verify signature, scan zip entries for path escapes, then unzip.
+            try await Task.detached(priority: .userInitiated) {
+                let package = try CRXVerifier.verify(data, expectedExtensionID: extensionID)
+                try Self.unzipPayload(package.zipPayload, into: unpacked, workDir: workDir)
+            }.value
+            try await installExtension(from: unpacked)
+            return true
+        } catch {
+            lastErrorMessage = "Error installing extension: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    /// Unzips an already-verified CRX payload with the system `ditto`, after refusing any archive
+    /// whose entries could land outside `destination` (absolute paths, `..`, links).
+    nonisolated private static func unzipPayload(_ zip: Data, into destination: URL, workDir: URL) throws {
+        try ZipArchiveScanner.scan(zip)
+
+        let zipURL = workDir.appendingPathComponent("payload.zip")
+        try zip.write(to: zipURL)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-x", "-k", zipURL.path, destination.path]
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0,
+              FileManager.default.fileExists(atPath: destination.appendingPathComponent("manifest.json").path) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        // Belt and braces: nothing may have been unpacked as a link, and nothing may sit next to
+        // the destination (workDir should hold only payload.zip and the unpacked folder).
+        try ZipArchiveScanner.verifyExtractedTree(at: destination)
+        let siblings = try FileManager.default.contentsOfDirectory(atPath: workDir.path)
+        guard Set(siblings) == [zipURL.lastPathComponent, destination.lastPathComponent] else {
+            throw ZipScanError.unsafeEntry(name: "(archive)", reason: "wrote files outside the destination")
+        }
+    }
+
     public func toggleExtension(id: String) async {
         guard let idx = installedExtensions.firstIndex(where: { $0.id == id }) else { return }
 
@@ -371,7 +436,7 @@ public final class AlpExtensionManager: ObservableObject {
             let dirURL = URL(fileURLWithPath: installedExtensions[idx].directoryURLPath)
             if let webExt = try? await WKWebExtension(resourceBaseURL: dirURL) {
                 let context = WKWebExtensionContext(for: webExt)
-                grantAllPermissions(to: context, for: webExt)
+                grantDeclaredPermissions(to: context, for: webExt)
                 try? controller.load(context)
                 activeContexts[id] = context
             }

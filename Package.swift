@@ -16,6 +16,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AlpBrowserTests",
+            dependencies: ["AlpBrowser"],
             path: "Tests/AlpBrowserTests"
         )
     ]

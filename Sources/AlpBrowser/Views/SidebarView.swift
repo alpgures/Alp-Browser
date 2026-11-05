@@ -37,7 +37,7 @@ public struct SidebarView: View {
                         )
                     )
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     // 1. Top Navigation Row (Seamless with macOS traffic lights)
                     // The row is exactly the band height, flush with the window top, so its centre
                     // is the traffic-light centre line.
@@ -46,7 +46,7 @@ public struct SidebarView: View {
 
                     // 2. Command / URL Bar Pill with hover "..." menu
                     urlCommandPill
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, 10)
                         .padding(.top, 4)
 
                     // 3. Favorites Grid (2x2 layout for 4 bookmarks)
@@ -171,11 +171,11 @@ public struct SidebarView: View {
                         Image(nsImage: fav)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 13, height: 13)
+                            .frame(width: 15, height: 15)
                     }
 
                     Text(browserState.activeTab.flatMap { $0.isBlank ? nil : $0.simplifiedDomain } ?? "Search or Enter URL...")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(theme.foregroundColor.opacity(0.92))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -187,50 +187,49 @@ public struct SidebarView: View {
             }
             .buttonStyle(.plain)
 
-            // Revealable "..." button when hovered over the website bubble
-            if isHoveringUrlPill {
-                Button {
-                    withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
-                        browserState.isSiteControlCenterPresented.toggle()
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(theme.secondaryForegroundColor)
-                        .frame(width: 20, height: 20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill(theme.hoverBackground)
-                        )
+            // "..." button: always laid out (fixed 24x24 slot); hover only fades it in, so the pill never reflows.
+            Button {
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                    browserState.isSiteControlCenterPresented.toggle()
                 }
-                .buttonStyle(.plain)
-                .help("Site Controls & Options")
-                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.secondaryForegroundColor)
+                    .frame(width: 24, height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(theme.hoverBackground)
+                    )
             }
+            .buttonStyle(.plain)
+            .help("Site Controls & Options")
+            .opacity(isHoveringUrlPill ? 1 : 0)
+            .allowsHitTesting(isHoveringUrlPill)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 12)
         .frame(maxWidth: .infinity)
+        .frame(height: 38)   // fixed: hover must never change the pill's size
         .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(theme.pillBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(theme.pillBorderColor, lineWidth: 0.8)
                 )
         )
         .contentShape(Rectangle())
-        .onHover { isHoveringUrlPill = $0 }
+        .onHover { isHoveringUrlPill = $0 }   // no animation: state only drives opacity
     }
 
     // MARK: - 3. Favorites Grid (2 Columns -> 2x2 for 4 Bookmarks)
 
     private var favoritesGrid: some View {
         let columns = [
-            GridItem(.flexible(), spacing: 6),
-            GridItem(.flexible(), spacing: 6)
+            GridItem(.flexible(), spacing: 8),
+            GridItem(.flexible(), spacing: 8)
         ]
-        return LazyVGrid(columns: columns, spacing: 6) {
+        return LazyVGrid(columns: columns, spacing: 8) {
             ForEach(browserState.favorites) { tab in
                 FavoriteTileView(
                     tab: tab,
@@ -309,7 +308,7 @@ public struct SidebarView: View {
     private var bottomSpaceSwitcherBar: some View {
         ZStack {
             // Centre: space switcher
-            HStack(spacing: 4) {
+            HStack(spacing: 8) {
                 ForEach(Array(browserState.spaces.enumerated()), id: \.element.id) { index, space in
                     SpaceSwitcherIcon(
                         space: space,
@@ -338,9 +337,9 @@ public struct SidebarView: View {
                     }
                 }
             }
-            .padding(.horizontal, 68)
+            .padding(.horizontal, 76)
 
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 // Leading: Library (folder)
                 Button {
                     withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
@@ -348,8 +347,8 @@ public struct SidebarView: View {
                     }
                 } label: {
                     Image(systemName: "folder")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 24, height: 24)
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(AlpIconButtonStyle(theme: theme))
@@ -360,8 +359,8 @@ public struct SidebarView: View {
                     browserState.isSettingsPresented = true
                 } label: {
                     Image(systemName: "gearshape")
-                        .font(.system(size: 12.5, weight: .medium))
-                        .frame(width: 24, height: 24)
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(AlpIconButtonStyle(theme: theme))
@@ -392,13 +391,13 @@ public struct SidebarView: View {
                 } label: {
                     HStack(spacing: 2) {
                         Image(systemName: "plus")
-                            .font(.system(size: 12.5, weight: .medium))
+                            .font(.system(size: 17, weight: .medium))
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 9, weight: .bold))
                     }
                     .foregroundStyle(theme.secondaryForegroundColor)
-                    .frame(height: 24)
-                    .padding(.horizontal, 4)
+                    .frame(height: 32)
+                    .padding(.horizontal, 5)
                     .contentShape(Rectangle())
                 }
                 .menuStyle(.borderlessButton)
@@ -407,9 +406,12 @@ public struct SidebarView: View {
                 .help("New Space…")
             }
         }
-        .frame(height: 30)
+        .frame(height: 40)
         .frame(maxWidth: .infinity)
     }
+}
+
+
 }
 
 // MARK: - Space Switcher Icon
@@ -427,14 +429,14 @@ struct SpaceSwitcherIcon: View {
     var body: some View {
         Button(action: action) {
             Text(space.iconEmoji)
-                .font(.system(size: 14))
+                .font(.system(size: 18))
                 .opacity(isActive ? 1.0 : (isHovered ? 1.0 : 0.82))
-                .frame(width: 26, height: 26)
+                .frame(width: 34, height: 34)
                 .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .fill(isActive ? theme.pillBackground : (isHovered ? theme.hoverBackground : Color.clear))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
                                 .stroke(isActive ? theme.pillBorderColor : Color.clear, lineWidth: 0.8)
                         )
                 )
@@ -592,24 +594,23 @@ struct FolderRowItemView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9.5, weight: .bold))
+                        .font(.system(size: 10.5, weight: .bold))
                         .foregroundStyle(theme.secondaryForegroundColor)
-                        .frame(width: 12)
+                        .frame(width: 14)
 
                     Image(systemName: isExpanded ? "folder.fill" : "folder")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: 14))
                         .foregroundStyle(theme.effectiveAccentColor)
 
                     Text(folder.title)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(theme.foregroundColor)
                         .lineLimit(1)
 
                     Spacer()
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -678,38 +679,38 @@ struct TabRowItemView: View {
     }
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 9) {
             // Favicon or Kind Icon
             Group {
                 if let fav = FaviconCache.shared.favicon(for: tab.urlString) {
                     Image(nsImage: fav)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 14, height: 14)
+                        .frame(width: 16, height: 16)
                 } else {
                     switch tab.kind {
                     case .web:
                         Image(systemName: "globe")
-                            .font(.system(size: 11))
+                            .font(.system(size: 13))
                             .foregroundStyle(theme.secondaryForegroundColor)
                     case .canvas:
                         Image(systemName: "scribble")
-                            .font(.system(size: 11))
+                            .font(.system(size: 13))
                             .foregroundStyle(theme.effectiveAccentColor)
                     case .note:
                         Image(systemName: "note.text")
-                            .font(.system(size: 11))
+                            .font(.system(size: 13))
                             .foregroundStyle(theme.effectiveAccentColor)
                     }
                 }
             }
-            .frame(width: 16, height: 16)
+            .frame(width: 18, height: 18)
 
             // Title or Renaming TextField
             if renamingTabID == tab.id {
                 TextField("Tab Title", text: $renameDraft)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.white)
                     .onSubmit {
                         browserState.mutateTab(id: tab.id) { $0.customTitle = renameDraft }
@@ -717,7 +718,7 @@ struct TabRowItemView: View {
                     }
             } else {
                 Text(tab.displayTitle)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                    .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? theme.foregroundColor : theme.foregroundColor.opacity(0.85))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -728,7 +729,7 @@ struct TabRowItemView: View {
             // Audio Playing Indicator
             if tab.isPlayingAudio {
                 Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: 9.5))
+                    .font(.system(size: 11))
                     .foregroundStyle(theme.effectiveAccentColor)
             }
 
@@ -745,21 +746,20 @@ struct TabRowItemView: View {
                     Image(systemName: showMinus ? "minus" : "xmark")
                         .font(.system(size: showMinus ? 10.5 : 9.5, weight: .bold))
                         .foregroundStyle(theme.secondaryForegroundColor)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
                 .help(showMinus ? "Unload Tab" : "Close Tab (⌘W)")
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, minHeight: 36)
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(isSelected ? theme.selectionBackground : (isHovered ? theme.hoverBackground : Color.clear))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .stroke(isTargetedForDrop ? theme.effectiveAccentColor : Color.clear, lineWidth: 1.5)
         )
         .contentShape(Rectangle())
@@ -854,15 +854,15 @@ struct FavoriteTileView: View {
                     Image(nsImage: fav)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 20, height: 20)
+                        .frame(width: 22, height: 22)
                 } else {
                     Image(systemName: "globe")
-                        .font(.system(size: 15))
+                        .font(.system(size: 17))
                         .foregroundStyle(theme.foregroundColor)
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 42)
+            .frame(height: 48)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -880,23 +880,22 @@ struct NewTabButtonRow: View {
         Button {
             browserState.openCommandBar(prefilledWithCurrentURL: false)
         } label: {
-            HStack(spacing: 7) {
+            HStack(spacing: 9) {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(isHovered ? theme.foregroundColor : theme.secondaryForegroundColor)
-                    .frame(width: 16, height: 16)
+                    .frame(width: 18, height: 18)
 
                 Text("New Tab")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(isHovered ? theme.foregroundColor : theme.secondaryForegroundColor)
 
                 Spacer()
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 36)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(isHovered ? theme.hoverBackground : Color.clear)
             )
             .contentShape(Rectangle())

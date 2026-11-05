@@ -295,9 +295,9 @@ enum AlpTopBarMetrics {
     static let bandHeight: CGFloat = 28
     /// Distance from the window's top edge to the shared centre line.
     static let centerY: CGFloat = bandHeight / 2
-    static let iconSize: CGFloat = 24
-    static let iconGlyphSize: CGFloat = 12
-    static let iconSpacing: CGFloat = 2
+    static let iconSize: CGFloat = 26
+    static let iconGlyphSize: CGFloat = 13.5
+    static let iconSpacing: CGFloat = 4
     /// Horizontal space reserved for the traffic lights.
     static let trafficLightInset: CGFloat = 72
 }
@@ -328,7 +328,7 @@ enum CollapsedNavStripMetrics {
     static let bandHeight: CGFloat = AlpTopBarMetrics.bandHeight
     /// Where the page starts: the band plus a small gap so the pill never touches the page.
     static let contentTopInset: CGFloat = bandHeight + 4
-    static let pillHeight: CGFloat = 24
+    static let pillHeight: CGFloat = 26
     static let pillMaxWidth: CGFloat = 520
     /// Space reserved at each side: traffic lights + toggle/back/forward on the left, mirrored on the right
     /// so the pill stays centred on the window.
@@ -652,7 +652,7 @@ public struct AlpSpaceBackgroundView: View {
 struct SidebarResizeHandle: View {
     @Binding var sidebarWidth: CGFloat
     @State private var isDragging = false
-    @State private var dragStartWidth: CGFloat = 256
+    @State private var dragStartWidth: CGFloat = 296
 
     var body: some View {
         ZStack {
@@ -685,7 +685,7 @@ struct SidebarResizeHandle: View {
                         dragStartWidth = sidebarWidth
                     }
                     let proposed = dragStartWidth + value.translation.width
-                    let clamped = min(max(proposed, 200), 460)
+                    let clamped = min(max(proposed, 260), 500)
                     sidebarWidth = clamped
                 }
                 .onEnded { _ in

@@ -884,7 +884,7 @@ public struct PersistedBrowserStore: Codable {
         hasImportedFromArc: Bool = false,
         selectedIconName: String = "alp_browser_original",
         customIconConfig: CustomIconConfig = CustomIconConfig(),
-        sidebarWidth: Double = 256.0,
+        sidebarWidth: Double = 296.0,
         splitRatio: Double = 0.5
     ) {
         self.spaces = spaces
@@ -927,7 +927,7 @@ public struct PersistedBrowserStore: Codable {
         self.hasImportedFromArc = try container.decodeIfPresent(Bool.self, forKey: .hasImportedFromArc) ?? false
         self.selectedIconName = try container.decodeIfPresent(String.self, forKey: .selectedIconName) ?? "alp_browser_original"
         self.customIconConfig = try container.decodeIfPresent(CustomIconConfig.self, forKey: .customIconConfig) ?? CustomIconConfig()
-        self.sidebarWidth = try container.decodeIfPresent(Double.self, forKey: .sidebarWidth) ?? 256.0
+        self.sidebarWidth = try container.decodeIfPresent(Double.self, forKey: .sidebarWidth) ?? 296.0
         let ratio = try container.decodeIfPresent(Double.self, forKey: .splitRatio) ?? 0.5
         self.splitRatio = min(0.8, max(0.2, ratio))
     }

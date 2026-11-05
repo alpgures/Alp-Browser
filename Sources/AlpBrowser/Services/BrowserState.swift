@@ -25,10 +25,12 @@ public final class BrowserState: ObservableObject {
     // MARK: - UI Chrome & Overlays State
     @Published public var isSidebarCollapsed: Bool = false
     @Published public var isSidebarHoverPeeking: Bool = false
-    @Published public var sidebarWidth: CGFloat = 256
+    @Published public var sidebarWidth: CGFloat = 296
 
     @Published public var isCommandBarPresented: Bool = false
     @Published public var commandBarInitialQuery: String = ""
+    /// Bumped on every openCommandBar call so an already-visible bar can re-take keyboard focus.
+    @Published public var commandBarOpenCount: Int = 0
 
     @Published public var peekSession: PeekSession?
     @Published public var isFindBarPresented: Bool = false
@@ -542,6 +544,7 @@ public final class BrowserState: ObservableObject {
         } else {
             commandBarInitialQuery = ""
         }
+        commandBarOpenCount &+= 1
         withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
             isCommandBarPresented = true
         }
@@ -1738,7 +1741,8 @@ public final class BrowserState: ObservableObject {
         self.hasImportedFromArc = store.hasImportedFromArc
         self.selectedIconName = store.selectedIconName
         self.customIconConfig = store.customIconConfig
-        self.sidebarWidth = CGFloat(store.sidebarWidth)
+        // The old 256pt default was too thin; carry untouched stores up to the new default.
+        self.sidebarWidth = store.sidebarWidth == 256.0 ? 296 : CGFloat(store.sidebarWidth)
         self.splitRatio = CGFloat(store.splitRatio)
         for idx in spaces.indices { pruneSplit(at: idx) }
         scheduleSave()

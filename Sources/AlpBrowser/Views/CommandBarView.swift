@@ -343,7 +343,6 @@ public struct CommandBarView: View {
                     browserState.isCommandBarPresented = false
                 }
 
-            GeometryReader { geo in
             VStack(spacing: 0) {
                 // Top input row: leading glyph + large borderless field
                 HStack(spacing: 12) {
@@ -477,18 +476,16 @@ public struct CommandBarView: View {
                     .stroke(Color.white.opacity(0.14), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.45), radius: 32, y: 14)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            // Sits roughly a quarter of the way down the window, not glued to the top edge.
-            .padding(.top, max(150, geo.size.height * 0.24))
-            }
+            // Centered on the window (this ZStack fills the whole window), both axes.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .onExitCommand {
             browserState.isCommandBarPresented = false
         }
         .onAppear {
             query = browserState.commandBarInitialQuery
-            isInputFocused = true
             selectedIndex = 0
+            focusField()
 
             // ⌘L pre-fills the current URL; select it so typing replaces it.
             if !browserState.commandBarInitialQuery.isEmpty {
@@ -516,6 +513,11 @@ public struct CommandBarView: View {
                 }
                 return event
             }
+        }
+        .onChange(of: browserState.commandBarOpenCount) { _, _ in
+            // ⌘T / ⌘L while the bar is already up: pull focus back into the field.
+            query = browserState.commandBarInitialQuery
+            focusField()
         }
         .onDisappear {
             if let monitor = keyMonitor {
@@ -562,6 +564,18 @@ public struct CommandBarView: View {
                     .foregroundStyle(isSelected ? selectionBarColor : .white.opacity(0.60))
             }
             .frame(width: 20, height: 20)
+        }
+    }
+
+    /// Puts the caret in the field. The view can appear before its window is key (or while the
+    /// sidebar / web view still holds first responder), so assert again once it is in the window.
+    private func focusField() {
+        isInputFocused = true
+        DispatchQueue.main.async {
+            isInputFocused = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            if browserState.isCommandBarPresented { isInputFocused = true }
         }
     }
 

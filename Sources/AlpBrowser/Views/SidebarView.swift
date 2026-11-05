@@ -89,7 +89,7 @@ public struct SidebarView: View {
             if !browserState.isSidebarCollapsed {
                 // Exact width clearance for macOS window traffic lights (dots)
                 Spacer()
-                    .frame(width: 68)
+                    .frame(width: 70)
             }
 
             Button {
@@ -421,73 +421,90 @@ struct SidebarSpaceContentView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            ZStack(alignment: .topLeading) {
-                let currentSpace = browserState.activeSpace
+        GeometryReader { geo in
+            let width = geo.size.width
+            let activeIdx = browserState.activeSpaceIndex ?? 0
 
-                VStack(alignment: .leading, spacing: 3) {
-                    // Space Title Header matching Arc (e.g. "🧌 Personal")
-                    HStack(spacing: 6) {
-                        Text(currentSpace.iconEmoji)
-                            .font(.system(size: 13))
-                        Text(currentSpace.title)
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(theme.foregroundColor)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.top, 4)
-                    .padding(.bottom, 2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    // Pinned Items Section (Retained Members)
-                    if !currentSpace.pinnedNodes.isEmpty {
-                        ForEach(currentSpace.pinnedNodes) { node in
-                            SidebarNodeRowView(
-                                node: node,
-                                renamingTabID: $renamingTabID,
-                                renameDraft: $renameDraft,
-                                theme: theme
-                            )
-                        }
-
-                        // Subtle divider between retained items and temporary tabs
-                        Rectangle()
-                            .fill(theme.secondaryForegroundColor.opacity(0.18))
-                            .frame(height: 1)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 4)
-                    }
-
-                    // Temporary (Today) Tabs
-                    ForEach(currentSpace.todayTabs) { tab in
-                        TabRowItemView(
-                            tab: tab,
-                            isPinned: false,
-                            isSelected: browserState.activeTabID == tab.id,
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(browserState.spaces.enumerated()), id: \.element.id) { index, space in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        SingleSpaceContentListView(
+                            space: space,
                             renamingTabID: $renamingTabID,
                             renameDraft: $renameDraft,
                             theme: theme
                         )
+                        .padding(.horizontal, 1)
                     }
-
-                    // "+ New Tab" row (opens Command Bar in center)
-                    NewTabButtonRow(theme: theme)
+                    .frame(width: width)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .id(currentSpace.id)
-                .transition(
-                    .asymmetric(
-                        insertion: .move(edge: browserState.spaceTransitionDirection > 0 ? .trailing : .leading).combined(with: .opacity),
-                        removal: .move(edge: browserState.spaceTransitionDirection > 0 ? .leading : .trailing).combined(with: .opacity)
+            }
+            .offset(x: -CGFloat(activeIdx) * width + gestures.sidebarSwipeOffset)
+            .animation(.spring(response: 0.32, dampingFraction: 0.86), value: browserState.activeSpaceID)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+    }
+}
+
+struct SingleSpaceContentListView: View {
+    @EnvironmentObject var browserState: BrowserState
+    let space: AlpSpace
+    @Binding var renamingTabID: UUID?
+    @Binding var renameDraft: String
+    let theme: SpaceTheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            // Space Title Header matching Arc (e.g. "🧌 Personal")
+            HStack(spacing: 6) {
+                Text(space.iconEmoji)
+                    .font(.system(size: 13))
+                Text(space.title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(theme.foregroundColor)
+                Spacer()
+            }
+            .padding(.horizontal, 6)
+            .padding(.top, 4)
+            .padding(.bottom, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Pinned Items Section (Retained Members)
+            if !space.pinnedNodes.isEmpty {
+                ForEach(space.pinnedNodes) { node in
+                    SidebarNodeRowView(
+                        node: node,
+                        renamingTabID: $renamingTabID,
+                        renameDraft: $renameDraft,
+                        theme: theme
                     )
+                }
+
+                // Subtle divider between retained items and temporary tabs
+                Rectangle()
+                    .fill(theme.secondaryForegroundColor.opacity(0.18))
+                    .frame(height: 1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+            }
+
+            // Temporary (Today) Tabs
+            ForEach(space.todayTabs) { tab in
+                TabRowItemView(
+                    tab: tab,
+                    isPinned: false,
+                    isSelected: browserState.activeTabID == tab.id,
+                    renamingTabID: $renamingTabID,
+                    renameDraft: $renameDraft,
+                    theme: theme
                 )
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .offset(x: gestures.sidebarSwipeOffset)
-            .animation(.spring(response: 0.30, dampingFraction: 0.85), value: browserState.activeSpaceID)
+
+            // "+ New Tab" row (opens Command Bar in center)
+            NewTabButtonRow(theme: theme)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -197,11 +197,21 @@ public final class TrackpadGestureManager: ObservableObject {
         }
 
         if phase == .changed || phase == .began {
+            if activeTarget == .none {
+                if BrowserState.shared.peekSession != nil {
+                    activeTarget = .peek
+                } else if isLocationInSidebar(event) {
+                    activeTarget = .sidebar
+                } else {
+                    activeTarget = .viewport
+                }
+            }
+
             guard !hasCommittedInCurrentGesture else {
                 return activeTarget == .sidebar ? nil : event
             }
 
-            let dx = event.scrollingDeltaX
+            let dx = event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
             let dy = event.scrollingDeltaY
             accumulatedDeltaX += dx
             accumulatedDeltaY += dy

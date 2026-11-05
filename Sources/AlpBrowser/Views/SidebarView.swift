@@ -328,6 +328,12 @@ public struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .help("\(space.title) Space")
+                    .contextMenu {
+                        Button("Customize Space Theme...") {
+                            browserState.switchToSpace(at: index)
+                            browserState.isThemePickerPresented = true
+                        }
+                    }
                 }
             }
             .fixedSize()

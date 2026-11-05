@@ -321,16 +321,12 @@ public struct SpaceThemeStudioView: View {
 
     private var liveMiniSidebarPreview: some View {
         ZStack {
-            // Theme Gradient + Grain
+            // Theme Gradient
             LinearGradient(
                 colors: currentTheme.renderedGradientColors,
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-
-            if currentTheme.grainIntensity > 0.05 {
-                AlpGrainOverlayView(intensity: currentTheme.grainIntensity)
-            }
 
             // Mock Sidebar Elements
             VStack(alignment: .leading, spacing: 8) {

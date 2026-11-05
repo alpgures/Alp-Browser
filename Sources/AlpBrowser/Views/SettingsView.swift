@@ -38,7 +38,7 @@ public struct SettingsView: View {
     public var body: some View {
         VStack(spacing: 0) {
             // macOS style toolbar row
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 ForEach(SettingsTab.allCases) { tab in
                     Button {
                         selectedTab = tab
@@ -46,10 +46,12 @@ public struct SettingsView: View {
                         HStack(spacing: 6) {
                             Image(systemName: tab.icon)
                             Text(tab.rawValue)
+                                .lineLimit(1)
                         }
+                        .fixedSize(horizontal: true, vertical: false)
                         .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
+                        .padding(.vertical, 6)
                         .background(
                             selectedTab == tab ? Color.accentColor.opacity(0.18) : Color.clear,
                             in: RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -66,8 +68,8 @@ public struct SettingsView: View {
                 .keyboardShortcut(.defaultAction)
                 .controlSize(.regular)
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             .background(.regularMaterial)
 
             Divider()
@@ -88,7 +90,7 @@ public struct SettingsView: View {
                 .padding(24)
             }
         }
-        .frame(minWidth: 580, maxWidth: 640, minHeight: 440, maxHeight: 520)
+        .frame(minWidth: 650, maxWidth: 720, minHeight: 460, maxHeight: 560)
     }
 
     // MARK: - 1. General & App Icons Tab

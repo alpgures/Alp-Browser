@@ -272,7 +272,9 @@ public struct LibraryDrawerView: View {
                         HStack(spacing: 5) {
                             Image(systemName: section.icon)
                             Text(section.rawValue)
+                                .lineLimit(1)
                         }
+                        .fixedSize(horizontal: true, vertical: false)
                         .font(.system(size: 11.5, weight: browserState.selectedLibrarySection == section ? .semibold : .medium))
                         .foregroundStyle(browserState.selectedLibrarySection == section ? .white : .white.opacity(0.65))
                         .padding(.horizontal, 10)

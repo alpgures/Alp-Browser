@@ -189,6 +189,26 @@ public struct SettingsView: View {
                 .frame(width: 140)
                 .onChange(of: browserState.autoHibernateMinutes) { _, _ in browserState.scheduleSave() }
             }
+
+            Divider().padding(.vertical, 2)
+
+            Text("Data Import")
+                .font(.system(size: 14, weight: .bold))
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Import from Arc")
+                        .font(.system(size: 12, weight: .medium))
+                    Text(AlpSidebarImporter.isArcInstalledDataAvailable ? "Detected local Arc spaces, bookmarks, and extensions." : "No local Arc profile found.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Import Spaces & Data") {
+                    browserState.importFromInstalledArcBrowser()
+                }
+                .disabled(!AlpSidebarImporter.isArcInstalledDataAvailable)
+            }
         }
     }
 

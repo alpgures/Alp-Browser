@@ -415,7 +415,7 @@ public struct SiteControlCenterPopoverView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // 1. Top 4 Action Tiles (Share, Boost, Screenshot, Inspect)
+            // 1. Top 4 Action Tiles (Share, Style, Screenshot, Inspect)
             HStack(spacing: 8) {
                 quickActionTile(icon: "square.and.arrow.up", label: "Share") {
                     if let url = browserState.activeTab?.urlString {
@@ -426,7 +426,7 @@ public struct SiteControlCenterPopoverView: View {
                     browserState.isSiteControlCenterPresented = false
                 }
 
-                quickActionTile(icon: "wand.and.stars", label: "Boost") {
+                quickActionTile(icon: "wand.and.stars", label: "Style") {
                     browserState.isSiteControlCenterPresented = false
                     browserState.isStyleStudioPresented = true
                 }

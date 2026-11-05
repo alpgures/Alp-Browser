@@ -86,7 +86,7 @@ public struct SidebarView: View {
 
     private var topNavigationRow: some View {
         HStack(spacing: 4) {
-            if !browserState.isSidebarCollapsed {
+            if !browserState.isSidebarCollapsed || browserState.isSidebarHoverPeeking {
                 // Exact width clearance for macOS window traffic lights (dots)
                 Spacer()
                     .frame(width: 70)

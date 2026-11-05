@@ -33,22 +33,12 @@ public struct MainBrowserWindow: View {
                     SidebarResizeHandle(sidebarWidth: $browserState.sidebarWidth)
                 }
 
-                // Inset Web Viewport with Directional Space Navigation Animation
-                ZStack {
-                    viewportArea
-                        .id(browserState.activeSpaceID)
-                        .transition(
-                            .asymmetric(
-                                insertion: .move(edge: browserState.spaceTransitionDirection > 0 ? .trailing : .leading),
-                                removal: .move(edge: browserState.spaceTransitionDirection > 0 ? .leading : .trailing)
-                            )
-                        )
-                }
-                .animation(.spring(response: 0.32, dampingFraction: 0.85), value: browserState.activeSpaceID)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
-                .padding(.trailing, 8)
-                .padding(.leading, browserState.isSidebarCollapsed ? 8 : 2)
+                // Inset Web Viewport (Remains stationary; only the sidebar space slides)
+                viewportArea
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+                    .padding(.trailing, 8)
+                    .padding(.leading, browserState.isSidebarCollapsed ? 8 : 2)
             }
 
             // 3. Collapsed Sidebar Edge Hover Trigger
@@ -97,14 +87,25 @@ public struct MainBrowserWindow: View {
             }
 
             // 4. Overlays (Site Control, Theme Picker, Find Bar, Style Studio)
+            if browserState.isSiteControlCenterPresented {
+                Color.black.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                            browserState.isSiteControlCenterPresented = false
+                        }
+                    }
+            }
+
             VStack {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 10) {
                         if browserState.isSiteControlCenterPresented {
                             SiteControlCenterPopoverView()
-                                .padding(.leading, 14)
-                                .padding(.top, 78)
-                                .transition(.scale(scale: 0.94, anchor: .topLeading).combined(with: .opacity))
+                                .padding(.leading, max(14, browserState.sidebarWidth - 180))
+                                .padding(.top, 76)
+                                .transition(.scale(scale: 0.94, anchor: .topTrailing).combined(with: .opacity))
                         }
 
                         if browserState.isThemePickerPresented {

@@ -143,29 +143,15 @@ public struct SidebarView: View {
         .frame(height: 26)
     }
 
-    // MARK: - 2. Clean URL Command Pill with Hover "..." Menu
+    // MARK: - 2. Clean URL Command Pill with Site Controls & Extensions
 
     private var urlCommandPill: some View {
         HStack(spacing: 6) {
-            // Lock / Shield Icon
-            Button {
-                withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
-                    browserState.isSiteControlCenterPresented.toggle()
-                }
-            } label: {
-                Image(systemName: browserState.activeTab?.urlString.hasPrefix("https") == true ? "lock.fill" : "slider.horizontal.3")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(theme.secondaryForegroundColor)
-                    .frame(width: 16, height: 16)
-            }
-            .buttonStyle(.plain)
-            .help("Site Security & Privacy Controls")
-
-            // Domain / URL Title Area
+            // Domain / URL Title Area (Click opens Command Bar ⌘T / ⌘L)
             Button {
                 browserState.openCommandBar(prefilledWithCurrentURL: true)
             } label: {
-                HStack {
+                HStack(spacing: 5) {
                     Text(browserState.activeTab?.simplifiedDomain ?? "Search or Enter URL...")
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(theme.foregroundColor.opacity(0.92))
@@ -177,56 +163,41 @@ public struct SidebarView: View {
             }
             .buttonStyle(.plain)
 
-            // Hover "..." Action Menu (Arc-style)
-            Menu {
-                Button {
-                    if let url = browserState.activeTab?.urlString {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url, forType: .string)
-                        browserState.showToast("Copied link to clipboard")
-                    }
-                } label: {
-                    Label("Copy Link", systemImage: "link")
-                }
+            // Right side of URL bubble (Exact Arc layout from user screenshot):
+            // 1. Pink Adblock / Privacy Shield
+            Image(systemName: "shield.fill")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Color(red: 0.95, green: 0.35, blue: 0.55))
 
-                Button {
-                    browserState.addSplitPane()
-                } label: {
-                    Label("Add Split View", systemImage: "rectangle.split.2x1")
-                }
-
-                Button {
-                    browserState.isStyleStudioPresented.toggle()
-                } label: {
-                    Label("Customize Page Style", systemImage: "bolt.fill")
-                }
-
-                Button {
-                    browserState.isSiteControlCenterPresented.toggle()
-                } label: {
-                    Label("Site Controls & Shields", systemImage: "shield")
-                }
-
-                Divider()
-
-                Button {
-                    if let id = browserState.activeTabID {
-                        WebViewPool.shared.reload(in: id)
-                    }
-                } label: {
-                    Label("Reload Page", systemImage: "arrow.clockwise")
+            // 2. Copy Link Button
+            Button {
+                if let url = browserState.activeTab?.urlString {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url, forType: .string)
+                    browserState.showToast("Copied link to clipboard")
                 }
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 11, weight: .bold))
+                Image(systemName: "link")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(theme.secondaryForegroundColor)
                     .frame(width: 18, height: 18)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .opacity(isHoveringUrlPill ? 1.0 : 0.0)
-            .animation(.easeInOut(duration: 0.15), value: isHoveringUrlPill)
-            .help("Page Options")
+            .buttonStyle(.plain)
+            .help("Copy URL")
+
+            // 3. Site Controls / Tune Button (Opens Arc Site Control Center)
+            Button {
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                    browserState.isSiteControlCenterPresented.toggle()
+                }
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(theme.secondaryForegroundColor)
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.plain)
+            .help("Site Controls & Extensions")
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
@@ -238,7 +209,6 @@ public struct SidebarView: View {
                         .stroke(theme.pillBorderColor, lineWidth: 0.8)
                 )
         )
-        .onHover { isHoveringUrlPill = $0 }
     }
 
     // MARK: - 3. Favorites Grid (2 Columns -> 2x2 for 4 Bookmarks)
@@ -416,6 +386,19 @@ struct SidebarSpaceContentView: View {
                 let currentSpace = browserState.activeSpace
 
                 VStack(alignment: .leading, spacing: 3) {
+                    // Space Title Header matching Arc (e.g. "🧌 Personal")
+                    HStack(spacing: 6) {
+                        Text(currentSpace.iconEmoji)
+                            .font(.system(size: 13))
+                        Text(currentSpace.title)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(theme.foregroundColor)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.top, 4)
+                    .padding(.bottom, 2)
+
                     // Pinned Items Section (Retained Members)
                     if !currentSpace.pinnedNodes.isEmpty {
                         ForEach(currentSpace.pinnedNodes) { node in

@@ -13,6 +13,10 @@ let package = Package(
         .executableTarget(
             name: "AlpBrowser",
             path: "Sources/AlpBrowser"
+        ),
+        .testTarget(
+            name: "AlpBrowserTests",
+            path: "Tests/AlpBrowserTests"
         )
     ]
 )

@@ -11,17 +11,20 @@ import Foundation
 public struct ImportedData: Sendable {
     public var spaces: [AlpSpace]
     public var favorites: [TabItem]
+    public var archivedTabs: [ArchivedTab]
     public var totalImportedTabs: Int
     public var totalImportedFolders: Int
 
     public init(
         spaces: [AlpSpace],
         favorites: [TabItem],
+        archivedTabs: [ArchivedTab] = [],
         totalImportedTabs: Int,
         totalImportedFolders: Int
     ) {
         self.spaces = spaces
         self.favorites = favorites
+        self.archivedTabs = archivedTabs
         self.totalImportedTabs = totalImportedTabs
         self.totalImportedFolders = totalImportedFolders
     }
@@ -33,8 +36,48 @@ public enum AlpSidebarImporter {
             .appendingPathComponent("Library/Application Support/Arc/StorableSidebar.json")
     }
 
+    public static var defaultArcArchiveItemsURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Arc/StorableArchiveItems.json")
+    }
+
     public static var isArcInstalledDataAvailable: Bool {
         FileManager.default.fileExists(atPath: defaultArcSidebarURL.path)
+    }
+
+    public static func importArchivedTabs(at fileURL: URL = defaultArcArchiveItemsURL) -> [ArchivedTab] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = json["items"] as? [Any] else {
+            return []
+        }
+
+        var results: [ArchivedTab] = []
+        for i in stride(from: 1, to: items.count, by: 2) {
+            guard let dict = items[i] as? [String: Any] else { continue }
+            let sidebarItem = dict["sidebarItem"] as? [String: Any] ?? [:]
+            let tabData = (sidebarItem["data"] as? [String: Any])?["tab"] as? [String: Any] ?? [:]
+            guard let urlString = tabData["savedURL"] as? String, !urlString.isEmpty else { continue }
+            let title = (tabData["savedTitle"] as? String) ?? (sidebarItem["title"] as? String) ?? urlString
+
+            let reason = (dict["reason"] as? String) ?? "manual"
+            var archivedDate = Date()
+            if let ts = dict["archivedAt"] as? Double {
+                archivedDate = Date(timeIntervalSinceReferenceDate: ts)
+            }
+
+            let id = (UUID(uuidString: (sidebarItem["id"] as? String) ?? "")) ?? UUID()
+            results.append(ArchivedTab(
+                id: id,
+                title: title,
+                urlString: urlString,
+                spaceTitle: "Archive",
+                archivedAt: archivedDate,
+                reason: reason
+            ))
+        }
+
+        return results
     }
 
     public static func importFromArc(at fileURL: URL = defaultArcSidebarURL) throws -> ImportedData {
@@ -158,9 +201,12 @@ public enum AlpSidebarImporter {
             importedSpaces.append(space)
         }
 
+        let archivedTabs = importArchivedTabs()
+
         return ImportedData(
             spaces: importedSpaces,
             favorites: importedFavorites,
+            archivedTabs: archivedTabs,
             totalImportedTabs: tabCount,
             totalImportedFolders: folderCount
         )

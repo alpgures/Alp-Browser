@@ -857,6 +857,9 @@ public final class BrowserState: ObservableObject {
                 self.canvases = store.canvases
                 self.notes = store.notes
                 self.archivedTabs = store.archivedTabs
+                if self.archivedTabs.isEmpty {
+                    self.archivedTabs = AlpSidebarImporter.importArchivedTabs()
+                }
                 self.autoArchiveHours = store.autoArchiveHours
                 self.autoHibernateMinutes = store.autoHibernateMinutes
                 self.adBlockerEnabled = store.adBlockerEnabled
@@ -877,10 +880,11 @@ public final class BrowserState: ObservableObject {
                 let imported = try AlpSidebarImporter.importFromArc()
                 self.spaces = imported.spaces
                 self.favorites = imported.favorites
+                self.archivedTabs = imported.archivedTabs
                 self.activeSpaceID = imported.spaces.first?.id
                 self.hasImportedFromArc = true
                 scheduleSave()
-                showToast("Imported \(imported.totalImportedTabs) tabs across \(imported.spaces.count) spaces")
+                showToast("Imported \(imported.totalImportedTabs) tabs and \(imported.archivedTabs.count) archived tabs")
                 return
             } catch {
                 print("Sidebar import failed: \(error)")

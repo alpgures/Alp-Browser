@@ -20,10 +20,10 @@ public enum LibraryRailSection: String, CaseIterable, Identifiable {
 
     public var iconName: String {
         switch self {
-        case .media: return "photo.stack"
+        case .media: return "photo.on.rectangle"
         case .downloads: return "arrow.down.circle"
-        case .easels: return "pencil.and.outline"
-        case .spaces: return "square.stack.3d.up"
+        case .easels: return "pencil.tip.crop.circle"
+        case .spaces: return "square.3.layers.3d"
         case .boosts: return "sparkles"
         case .archive: return "archivebox"
         }
@@ -43,69 +43,81 @@ public struct SidebarLibraryView: View {
 
     public var body: some View {
         HStack(spacing: 0) {
-            // Left Rail Column
+            // Left Rail Column (Arc: no divider, items vertically centred)
             railColumn
-                .frame(width: 70)
-
-            // Vertical subtle divider
-            Rectangle()
-                .fill(theme.secondaryForegroundColor.opacity(0.18))
-                .frame(width: 1)
-                .padding(.vertical, 8)
+                .frame(width: 74)
 
             // Right Content Sub-panel
             contentColumn
                 .frame(maxWidth: .infinity)
         }
         .foregroundStyle(theme.foregroundColor)
+        .onAppear { Self.setWindowTrafficLights(hidden: true) }
+        .onDisappear { Self.setWindowTrafficLights(hidden: false) }
+    }
+
+    /// Arc hides the window's traffic lights while the Library occupies the sidebar.
+    static func setWindowTrafficLights(hidden: Bool) {
+        guard let window = NSApp.mainWindow ?? NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.styleMask.contains(.fullSizeContentView) }) else { return }
+        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            for type in buttons {
+                window.standardWindowButton(type)?.animator().alphaValue = hidden ? 0 : 1
+            }
+        }
+        for type in buttons {
+            window.standardWindowButton(type)?.isEnabled = !hidden
+        }
     }
 
     // MARK: - Left Rail Column
 
     private var railColumn: some View {
-        VStack(spacing: 6) {
-            // Top clearance for macOS traffic lights (dots)
-            Spacer()
-                .frame(height: 38)
+        VStack(spacing: 0) {
+            Spacer(minLength: 12)
 
-            ForEach(LibraryRailSection.allCases) { section in
-                railButton(for: section)
+            VStack(spacing: 10) {
+                ForEach(LibraryRailSection.allCases) { section in
+                    railButton(for: section)
+                }
             }
 
-            Spacer()
+            Spacer(minLength: 12)
 
-            // Bottom action buttons matching Arc
-            HStack(spacing: 6) {
-                Button {
-                    let newId = UUID()
-                    browserState.canvases.append(AlpCanvas(id: newId, title: "New Easel"))
-                    browserState.scheduleSave()
-                    selectedSection = .easels
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(theme.secondaryForegroundColor)
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(.plain)
-                .help("New Easel / Canvas")
-
+            // Bottom: back to sidebar + invite (matches Arc's ← and gift)
+            HStack(spacing: 0) {
                 Button {
                     withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
                         browserState.isLibrarySheetPresented = false
                     }
                 } label: {
-                    Image(systemName: "archivebox")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(theme.secondaryForegroundColor)
-                        .frame(width: 24, height: 24)
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .help("Back to Spaces")
+                .buttonStyle(AlpIconButtonStyle(theme: theme))
+                .help("Back to Sidebar")
+
+                Spacer(minLength: 0)
+
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString("https://alpbrowser.app", forType: .string)
+                    browserState.showToast("Invite link copied")
+                } label: {
+                    Image(systemName: "gift")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(AlpIconButtonStyle(theme: theme))
+                .help("Invite a Friend")
             }
-            .padding(.bottom, 12)
+            .padding(.horizontal, 6)
+            .padding(.bottom, 10)
         }
-        .padding(.horizontal, 3)
     }
 
     @ViewBuilder
@@ -123,20 +135,20 @@ public struct SidebarLibraryView: View {
                 }
             }
         } label: {
-            VStack(spacing: 3) {
+            VStack(spacing: 5) {
                 Image(systemName: section.iconName)
-                    .font(.system(size: 16, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? theme.foregroundColor : theme.secondaryForegroundColor)
+                    .font(.system(size: 17, weight: .regular))
+                    .frame(height: 20)
 
                 Text(section.rawValue)
-                    .font(.system(size: 9.5, weight: isSelected ? .semibold : .medium))
-                    .foregroundStyle(isSelected ? theme.foregroundColor : theme.secondaryForegroundColor)
+                    .font(.system(size: 9.5, weight: .semibold))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+                    .minimumScaleFactor(0.8)
             }
-            .frame(width: 64, height: 46)
+            .foregroundStyle(isSelected ? theme.foregroundColor : theme.foregroundColor.opacity(0.72))
+            .frame(width: 66, height: 52)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(isSelected ? theme.selectionBackground : Color.clear)
             )
             .contentShape(Rectangle())
@@ -189,8 +201,9 @@ public struct SidebarLibraryView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.top, 14)
-            .padding(.horizontal, 8)
+            .padding(.top, 10)
+            .padding(.leading, 4)
+            .padding(.trailing, 8)
 
             // Content List depending on selectedSection
             ScrollView(.vertical, showsIndicators: false) {
@@ -456,30 +469,30 @@ struct ArchivedTabRowItem: View {
                     Image(nsImage: fav)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 14, height: 14)
+                        .frame(width: 16, height: 16)
                 } else {
                     Image(systemName: "globe")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(theme.secondaryForegroundColor)
-                        .frame(width: 14, height: 14)
+                        .frame(width: 16, height: 16)
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(tab.title.isEmpty ? tab.urlString : tab.title)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(theme.foregroundColor)
                         .lineLimit(1)
 
                     Text(cleanHostOrPath(tab.urlString))
-                        .font(.system(size: 9.5))
+                        .font(.system(size: 10))
                         .foregroundStyle(theme.secondaryForegroundColor)
                         .lineLimit(1)
                 }
 
                 Spacer()
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4.5)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(isHovered ? theme.hoverBackground : Color.clear)

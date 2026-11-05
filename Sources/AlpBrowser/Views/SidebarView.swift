@@ -281,98 +281,130 @@ public struct SidebarView: View {
 
     // MARK: - 6. Bottom Space Switcher & Library Bar (Stable during sidebar resizing)
 
+    /// Arc-style bottom bar: a single Library button on the leading edge,
+    /// the space switcher centred (active space shows its icon, inactive
+    /// spaces collapse to dimmed dots that reveal their icon on hover), and a
+    /// lone "+" on the trailing edge. No settings gear, no menu chevron.
     private var bottomSpaceSwitcherBar: some View {
-        HStack(spacing: 4) {
-            // Left: Library and Settings
-            HStack(spacing: 4) {
-                Button {
-                    browserState.isLibrarySheetPresented = true
-                } label: {
-                    Image(systemName: "folder")
-                        .font(.system(size: 12.5, weight: .medium))
-                        .frame(width: 26, height: 26)
-                }
-                .buttonStyle(AlpIconButtonStyle(theme: theme))
-                .help("Library (Archive, Canvas, Notes, Styles)")
-
-                Button {
-                    browserState.isSettingsPresented = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 12.5, weight: .medium))
-                        .frame(width: 26, height: 26)
-                }
-                .buttonStyle(AlpIconButtonStyle(theme: theme))
-                .help("Settings & App Icons (⌘,)")
-            }
-
-            Spacer(minLength: 4)
-
-            // Center: Space Indicator Pills
-            HStack(spacing: 4) {
+        ZStack {
+            // Centre: space switcher (true centre of the sidebar, independent of side buttons)
+            HStack(spacing: 2) {
                 ForEach(Array(browserState.spaces.enumerated()), id: \.element.id) { index, space in
-                    let isSelected = (browserState.activeSpaceID == space.id)
-                    Button {
+                    SpaceSwitcherIcon(
+                        space: space,
+                        isActive: browserState.activeSpaceID == space.id,
+                        theme: theme
+                    ) {
                         withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
                             browserState.switchToSpace(at: index)
                         }
-                    } label: {
-                        Text(space.iconEmoji)
-                            .font(.system(size: 13))
-                            .frame(width: 26, height: 26)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(isSelected ? theme.selectionBackground : Color.clear)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .stroke(isSelected ? theme.effectiveAccentColor.opacity(0.8) : Color.clear, lineWidth: 1.2)
-                            )
                     }
-                    .buttonStyle(.plain)
-                    .help("\(space.title) Space")
                     .contextMenu {
-                        Button("Customize Space Theme...") {
+                        Button("Edit Theme…") {
                             browserState.switchToSpace(at: index)
                             browserState.isThemePickerPresented = true
                         }
                     }
                 }
             }
+            .padding(.horizontal, 34)
 
-            Spacer(minLength: 4)
+            HStack(spacing: 0) {
+                // Leading: Library
+                Button {
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                        browserState.isLibrarySheetPresented = true
+                    }
+                } label: {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(AlpIconButtonStyle(theme: theme))
+                .help("Library")
 
-            // Right: New Space / Canvas / Note Menu
-            Menu {
-                Button("New Space") {
-                    let newSpace = AlpSpace(
-                        title: "Space \(browserState.spaces.count + 1)",
-                        iconEmoji: "🪐",
-                        theme: .auroraMesh
-                    )
-                    browserState.spaces.append(newSpace)
-                    browserState.activeSpaceID = newSpace.id
-                    browserState.scheduleSave()
+                Spacer(minLength: 0)
+
+                // Trailing: "+" (New Space / Folder / Easel / Note)
+                Menu {
+                    Button("New Space") {
+                        let newSpace = AlpSpace(
+                            title: "Space \(browserState.spaces.count + 1)",
+                            iconEmoji: "🪐",
+                            theme: .auroraMesh
+                        )
+                        browserState.spaces.append(newSpace)
+                        browserState.activeSpaceID = newSpace.id
+                        browserState.scheduleSave()
+                    }
+                    Button("New Easel") {
+                        browserState.createNewCanvas()
+                    }
+                    Button("New Note") {
+                        browserState.createNewNote()
+                    }
+                    Divider()
+                    Button("Edit Theme…") {
+                        browserState.isThemePickerPresented = true
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(theme.secondaryForegroundColor)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-                Button("New Canvas") {
-                    browserState.createNewCanvas()
-                }
-                Button("New Note") {
-                    browserState.createNewNote()
-                }
-                Divider()
-                Button("Theme Settings") {
-                    browserState.isThemePickerPresented = true
-                }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .bold))
-                    .frame(width: 26, height: 26)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("New Space…")
             }
-            .menuStyle(.borderlessButton)
-            .help("Add Space or Note")
         }
+        .frame(height: 30)
         .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Arc-style Space Switcher Icon
+
+/// Active space: its emoji at full strength. Inactive space: a small dimmed
+/// dot that morphs into the space's emoji while hovered.
+struct SpaceSwitcherIcon: View {
+    let space: AlpSpace
+    let isActive: Bool
+    let theme: SpaceTheme
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                if isActive || isHovered {
+                    Text(space.iconEmoji)
+                        .font(.system(size: 14))
+                        .opacity(isActive ? 1.0 : 0.85)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                } else {
+                    Circle()
+                        .fill(theme.secondaryForegroundColor.opacity(0.55))
+                        .frame(width: 7, height: 7)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                }
+            }
+            .frame(width: 24, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isHovered && !isActive ? theme.hoverBackground : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.14)) { isHovered = hovering }
+        }
+        .help(space.title)
     }
 }
 

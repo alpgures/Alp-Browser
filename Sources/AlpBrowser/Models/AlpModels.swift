@@ -201,9 +201,9 @@ public struct SpaceTheme: Codable, Equatable, Hashable, Sendable {
 
     public var selectionBackground: Color {
         if prefersLightForeground {
-            return Color.white.opacity(0.18)
+            return Color.white.opacity(0.20)
         } else {
-            return primaryColor.darkened(by: 0.30).swiftUIColor.opacity(0.22)
+            return Color.white.opacity(0.92)
         }
     }
 

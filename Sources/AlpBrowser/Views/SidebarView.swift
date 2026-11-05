@@ -679,7 +679,7 @@ struct TabRowItemView: View {
             } else {
                 Text(tab.displayTitle)
                     .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                    .foregroundStyle(isSelected ? theme.foregroundColor : theme.foregroundColor.opacity(0.85))
+                    .foregroundStyle(isSelected ? (theme.prefersLightForeground ? .white : Color(red: 0.11, green: 0.13, blue: 0.16)) : (theme.prefersLightForeground ? theme.foregroundColor.opacity(0.85) : theme.foregroundColor))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -718,6 +718,7 @@ struct TabRowItemView: View {
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(isSelected ? theme.selectionBackground : (isHovered ? theme.hoverBackground : Color.clear))
+                .shadow(color: isSelected && !theme.prefersLightForeground ? Color.black.opacity(0.08) : Color.clear, radius: 2, y: 1)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)

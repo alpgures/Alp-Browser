@@ -355,6 +355,28 @@ public final class BrowserState: ObservableObject {
         scheduleSave()
     }
 
+    public func reorderTodayTabs(sourceID: UUID, targetID: UUID) {
+        guard let sIdx = activeSpaceIndex, sourceID != targetID else { return }
+        var list = spaces[sIdx].todayTabs
+        guard let sourceIndex = list.firstIndex(where: { $0.id == sourceID }),
+              let targetIndex = list.firstIndex(where: { $0.id == targetID }) else { return }
+        let item = list.remove(at: sourceIndex)
+        list.insert(item, at: targetIndex)
+        spaces[sIdx].todayTabs = list
+        scheduleSave()
+    }
+
+    public func reorderPinnedNodes(sourceID: UUID, targetID: UUID) {
+        guard let sIdx = activeSpaceIndex, sourceID != targetID else { return }
+        var list = spaces[sIdx].pinnedNodes
+        guard let sourceIndex = list.firstIndex(where: { $0.id == sourceID }),
+              let targetIndex = list.firstIndex(where: { $0.id == targetID }) else { return }
+        let item = list.remove(at: sourceIndex)
+        list.insert(item, at: targetIndex)
+        spaces[sIdx].pinnedNodes = list
+        scheduleSave()
+    }
+
     public func moveTabToToday(tabID: UUID) {
         guard let sIdx = activeSpaceIndex, let tab = findTab(id: tabID), tab.isPinned else { return }
         spaces[sIdx].pinnedNodes = removeNode(id: tabID, from: spaces[sIdx].pinnedNodes)

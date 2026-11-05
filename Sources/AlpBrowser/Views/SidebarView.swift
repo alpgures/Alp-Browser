@@ -8,6 +8,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 public struct SidebarView: View {
     @EnvironmentObject var browserState: BrowserState
@@ -497,6 +498,7 @@ struct FolderRowItemView: View {
     let theme: SpaceTheme
 
     @State private var isExpanded: Bool
+    @State private var isTargetedForDrop = false
 
     init(folder: FolderItem, renamingTabID: Binding<UUID?>, renameDraft: Binding<String>, theme: SpaceTheme) {
         self.folder = folder
@@ -554,6 +556,20 @@ struct FolderRowItemView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(isTargetedForDrop ? theme.effectiveAccentColor : Color.clear, lineWidth: 1.5)
+        )
+        .onDrop(of: [UTType.plainText.identifier, UTType.text.identifier], isTargeted: $isTargetedForDrop) { providers in
+            guard let provider = providers.first else { return false }
+            _ = provider.loadObject(ofClass: NSString.self) { string, _ in
+                guard let uuidString = string as? String, let sourceUUID = UUID(uuidString: uuidString) else { return }
+                DispatchQueue.main.async {
+                    browserState.moveTabIntoFolder(tabID: sourceUUID, folderID: folder.id)
+                }
+            }
+            return true
+        }
     }
 }
 
@@ -567,6 +583,7 @@ struct TabRowItemView: View {
     let theme: SpaceTheme
 
     @State private var isHovered = false
+    @State private var isTargetedForDrop = false
 
     private var isRetained: Bool {
         isPinned || tab.isPinned || browserState.isRetainedMember(tabID: tab.id)
@@ -653,12 +670,43 @@ struct TabRowItemView: View {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(isSelected ? theme.selectionBackground : (isHovered ? theme.hoverBackground : Color.clear))
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(isTargetedForDrop ? theme.effectiveAccentColor : Color.clear, lineWidth: 1.5)
+        )
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovered = hovering
         }
         .onTapGesture {
             browserState.selectTab(tab.id)
+        }
+        .onDrag {
+            NSItemProvider(object: tab.id.uuidString as NSString)
+        }
+        .onDrop(of: [UTType.plainText.identifier, UTType.text.identifier], isTargeted: $isTargetedForDrop) { providers in
+            guard let provider = providers.first else { return false }
+            _ = provider.loadObject(ofClass: NSString.self) { string, _ in
+                guard let uuidString = string as? String, let sourceUUID = UUID(uuidString: uuidString) else { return }
+                DispatchQueue.main.async {
+                    if isPinned {
+                        if browserState.isRetainedMember(tabID: sourceUUID) {
+                            browserState.reorderPinnedNodes(sourceID: sourceUUID, targetID: tab.id)
+                        } else {
+                            browserState.moveTabToPinned(tabID: sourceUUID)
+                            browserState.reorderPinnedNodes(sourceID: sourceUUID, targetID: tab.id)
+                        }
+                    } else {
+                        if browserState.isRetainedMember(tabID: sourceUUID) {
+                            browserState.moveTabToToday(tabID: sourceUUID)
+                            browserState.reorderTodayTabs(sourceID: sourceUUID, targetID: tab.id)
+                        } else {
+                            browserState.reorderTodayTabs(sourceID: sourceUUID, targetID: tab.id)
+                        }
+                    }
+                }
+            }
+            return true
         }
         .contextMenu {
             Button(isRetained ? "Move to Active Tabs" : "Pin Tab") {

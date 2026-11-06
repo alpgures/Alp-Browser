@@ -139,5 +139,45 @@ Nothing is `matched` yet where it needs a real Mac build; CI cannot run the UI.
   ≈206 pt beside the lights); the bottom bar moves Settings into the "+" menu and the space switcher scrolls sideways when it does not
   fit (it used to overlap the side buttons below ≈250 pt). The media mini-player domain line is single-line. URL pill and folder rows
   already truncate.
-- **Known gap:** Arc hides the sidebar when dragged below 82; Alp clamps at 164 and does not collapse on drag.
+- **Known gap (closed in run 20, §12):** Arc hides the sidebar when dragged below 82; Alp now does too.
 - **Status:** needs-verification on a Mac.
+
+## 12. Change icon, quit-card contrast, sidebar collapse (run 20)
+
+- **Method (reference study, allowed by the run-18 rules update):** `strings` on `Arc.app/Contents/MacOS/Arc`, the `ARC_Emojis`,
+  `ARC_CustomInfoPicker`, `ARCClients_Icons` bundles, and the x86_64 slice's inline Swift small-strings (strings of ≤15 bytes are stored
+  as immediates in code, which is why a plain `strings` grep for "Change Icon" finds nothing; it was located by decoding `movabs`
+  immediates and disassembling the enclosing function). No `.lproj`/nib holds these strings. Nothing was copied; only wording and scope.
+- **Arc, menu wording:** **"Change Icon…"** (U+2026) exists in the **Space** context menu (its localisation comment: "Menu item to change a space's
+  custom icon"; a second string "Change Space Icon" carries the same comment). The folder context menu (Share Folder…, Duplicate, Archive Folder,
+  Delete, Turn "…" into Space, Copy All Links as Markdown, New Nested Folder, Rename) and the tab context menu (Copy link, Share, Copy ID, Rename,
+  Archive…, Duplicate, Edit Pinned Page, Replace Pinned URL with Current, …) contain **no icon item** in any string or inline immediate. "Reset Name and
+  Icon" exists as an undo-action name ("Undo prompt for resetting an item's name and title").
+- **Arc, capability (a) folders / (b) pinned tabs:** both exist in the model. `SidebarState+ItemInfo.updateIcon(_:)` and
+  `WindowData+TabAttributes.updateCustomIcon(for:icon:)` take any sidebar item ("Undo prompt for customizing a tab's icon"); `CustomInfoPickerConstants.IconSet`
+  has two cases, **`folderPicker`** and **`tabAndSpacePicker`**, plus `canRemoveIcon` (folders/tabs can go back to default; spaces cannot).
+  So Arc offers a custom icon for folders and for tabs/pinned items. **How the user opens the picker for those two was NOT found** (no menu string; likely the
+  icon/rename affordance in the row). **UNKNOWN — needs owner screenshot/description of Arc: right-click on a folder and on a pinned tab, and clicking the folder glyph.**
+- **Arc, picker contents:** one popover (`CustomInfoPickerHostingView`, `iconPickerPopover`) with two pages, **emoji** and **icon**, a search field
+  ("Placeholder for search field"), emoji category buttons (foodAndDrink, activities, travelAndPlaces, symbols, flags, plus the people/nature/objects
+  groups; data from `emojis.json`, 1870 entries with aliases/tags), an emoji skin-tone picker, and a grid of built-in icons (48 names: chatBubbleEllipses, star,
+  bookmark, heart, flag, flash, triangle, medical, notifications, bulb, shapes, grid, apps, layers, albums, copy, fileTrayFull, calendar, mail, checkbox, book, people,
+  terminal, construction, square, ellipse, moon, sunny, planet, leaf, cloud, gift, restaurant, barbell, airplane, musicalNote, colorPallete, bandage, code, baseball,
+  cloudOutline, bonfire, pizza, skull, receipt, train, search; Ionicons-style glyph fonts `ionicons.ttf`/`icomoon.ttf`). **No custom-image upload** was found.
+- **Arc, replace vs. add:** the icon is a per-item override (`customIcon`, shown by a custom icon view in the row); unset falls back to favicon / folder glyph.
+- **Arc, persistence:** the sidebar model (`StorableSidebar`), `customInfo.iconType` with keys `emoji_v2` (emoji), `icon` (built-in name), `symbol`, `emoji` (legacy).
+  Synced with the rest of the sidebar. Whether the folder/tab `iconType` is written under the same key in the JSON was not verified against a real file.
+- **Alp, before:** no way to change a folder or pinned-tab icon.
+- **Alp, now:** `AlpCustomIcon` (`.emoji` / `.symbol`) stored as optional `customIcon` on `FolderItem` and `TabItem` (Codable, additive: old saves decode as nil), saved
+  through `scheduleSave` like the rest of the sidebar. "Change Icon…" (Arc's wording) in the context menu of folders, pinned tabs and favorites tiles → `IconPickerView`
+  popover (Emoji / Icons pages, search, emoji category buttons, "Remove Icon"). Default glyph/favicon when unset. A custom icon on a tab is shown only while
+  it is pinned or a favorite (it is kept, but dormant, if unpinned).
+- **Deviations from Arc:** (1) no skin-tone picker, and ~280 curated emoji with our own keywords instead of Arc's 1870-entry set (we did not take `emojis.json`);
+  (2) Icons page uses SF Symbols mapped to Arc's names; pizza → coffee cup, skull dropped (no SF Symbol); (3) one picker for folders and tabs (Arc has two
+  `IconSet`s; their difference is unknown); (4) menu entry on folders/tabs is our choice, Arc's trigger unknown; (5) Alp has a Favorites grid AND pinned rows; both get the entry;
+  (6) the importer does not yet read Arc's folder/tab `iconType` (needs a sample JSON).
+- **Quit card:** the Cancel button used the system bordered style, so in light appearance it drew dark text on the always-dark card. Now both buttons use explicit
+  colors (Cancel: white text on a 16 % white capsule with outline; Quit: dark text on a white capsule), the card forces dark colour scheme, and the hint line is 68 % white (was 45 %).
+- **Sidebar collapse:** per §11, width during the drag is clamped to 164 and the release decides: pointer below **82** → sidebar hidden (`isSidebarCollapsed`), stored width stays ≥ 164.
+  Not offered while the Library is open (its floor is 330). Show-sidebar affordances unchanged (top-bar button, ⌘S, left-edge hover).
+- **Status:** needs-verification on a Mac for all three (CI cannot render).

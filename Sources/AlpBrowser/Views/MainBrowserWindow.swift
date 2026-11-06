@@ -44,7 +44,13 @@ public struct MainBrowserWindow: View {
 
                     SidebarResizeHandle(
                         sidebarWidth: $browserState.sidebarWidth,
-                        minWidth: browserState.isLibrarySheetPresented ? AlpSidebarMetrics.libraryMinWidth : AlpSidebarMetrics.minWidth
+                        minWidth: browserState.isLibrarySheetPresented ? AlpSidebarMetrics.libraryMinWidth : AlpSidebarMetrics.minWidth,
+                        onCollapse: browserState.isLibrarySheetPresented ? nil : {
+                            withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
+                                browserState.isSidebarHoverPeeking = false
+                                browserState.isSidebarCollapsed = true
+                            }
+                        }
                     )
                 }
 
@@ -344,6 +350,9 @@ enum AlpSidebarMetrics {
     static let defaultWidth: CGFloat = 296
     static let minWidth: CGFloat = 164
     static let maxWidth: CGFloat = 500
+    /// Releasing a drag with the pointer past this width hides the sidebar (Arc: 82 pt). The on-screen width
+    /// never goes below `minWidth` during the drag; only the release decides.
+    static let collapseThreshold: CGFloat = 82
     /// Below this width the nav cluster folds into a menu and the bottom bar drops to its compact form.
     static let narrowWidth: CGFloat = 212
     /// The Library view needs this much room; it is shown at this width even if the sidebar is narrower.
@@ -545,7 +554,11 @@ struct SidebarResizeHandle: View {
     @Binding var sidebarWidth: CGFloat
     /// Lower drag limit; the Library view raises it because it cannot render any narrower.
     var minWidth: CGFloat = AlpSidebarMetrics.minWidth
+    /// Called when a drag is released below `AlpSidebarMetrics.collapseThreshold`. Nil disables collapsing
+    /// (the Library is open and cannot be hidden by a drag).
+    var onCollapse: (() -> Void)? = nil
     @State private var isDragging = false
+    @State private var lastProposedWidth: CGFloat = AlpSidebarMetrics.defaultWidth
     @State private var dragStartWidth: CGFloat = AlpSidebarMetrics.defaultWidth
 
     var body: some View {
@@ -580,12 +593,17 @@ struct SidebarResizeHandle: View {
                         dragStartWidth = max(sidebarWidth, minWidth)
                     }
                     let proposed = dragStartWidth + value.translation.width
+                    lastProposedWidth = proposed
                     let clamped = min(max(proposed, minWidth), AlpSidebarMetrics.maxWidth)
                     sidebarWidth = clamped
                 }
                 .onEnded { _ in
                     isDragging = false
                     BrowserState.shared.scheduleSave()
+                    if let onCollapse, lastProposedWidth < AlpSidebarMetrics.collapseThreshold {
+                        NSCursor.pop()   // this handle is about to leave the tree while the resize cursor is pushed
+                        onCollapse()
+                    }
                 }
         )
     }

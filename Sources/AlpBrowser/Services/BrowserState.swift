@@ -894,6 +894,20 @@ public final class BrowserState: ObservableObject {
         scheduleSave()
     }
 
+    /// Sets (or clears, with nil) a folder's custom icon. Folders live in the pinned tree of whichever space holds them.
+    public func setFolderIcon(id folderID: UUID, to icon: AlpCustomIcon?) {
+        for sIdx in spaces.indices {
+            spaces[sIdx].pinnedNodes = updateFolder(id: folderID, in: spaces[sIdx].pinnedNodes) { $0.customIcon = icon }
+        }
+        scheduleSave()
+    }
+
+    /// Sets (or clears, with nil) the custom icon of a tab. Used for pinned tabs and favorites.
+    public func setTabIcon(id tabID: UUID, to icon: AlpCustomIcon?) {
+        mutateTab(id: tabID) { $0.customIcon = icon }
+        scheduleSave()
+    }
+
     private func dissolveFolder(id folderID: UUID, in nodes: [SidebarNode]) -> [SidebarNode] {
         var result: [SidebarNode] = []
         for node in nodes {

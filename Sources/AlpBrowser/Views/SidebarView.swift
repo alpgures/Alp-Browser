@@ -272,19 +272,6 @@ public struct SidebarView: View {
                 ) {
                     browserState.selectTab(tab.id)
                 }
-                .contextMenu {
-                    Button("Remove from Favorites") {
-                        browserState.toggleFavorite(tabID: tab.id)
-                    }
-                    Button("Copy URL") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(tab.urlString, forType: .string)
-                    }
-                    Divider()
-                    Button("Unload Tab") {
-                        browserState.handleTabTrailingButtonAction(for: tab)
-                    }
-                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -633,6 +620,7 @@ struct FolderRowItemView: View {
     @State private var isTargetedForDrop = false
     @State private var isRenaming = false
     @State private var nameDraft = ""
+    @State private var showIconPicker = false
 
     init(folder: FolderItem, renamingTabID: Binding<UUID?>, renameDraft: Binding<String>, theme: SpaceTheme) {
         self.folder = folder
@@ -656,9 +644,18 @@ struct FolderRowItemView: View {
                         .foregroundStyle(theme.secondaryForegroundColor)
                         .frame(width: 14)
 
-                    Image(systemName: isExpanded ? "folder.fill" : "folder")
-                        .font(.system(size: 14))
-                        .foregroundStyle(theme.effectiveAccentColor)
+                    Group {
+                        if let icon = folder.customIcon {
+                            AlpCustomIconView(icon: icon, size: 14, tint: theme.effectiveAccentColor)
+                        } else {
+                            Image(systemName: isExpanded ? "folder.fill" : "folder")
+                                .font(.system(size: 14))
+                                .foregroundStyle(theme.effectiveAccentColor)
+                        }
+                    }
+                    .alpIconPicker(isPresented: $showIconPicker, current: folder.customIcon) {
+                        browserState.setFolderIcon(id: folder.id, to: $0)
+                    }
 
                     Text(folder.title)
                         .font(.system(size: 14, weight: .semibold))
@@ -698,6 +695,9 @@ struct FolderRowItemView: View {
                 nameDraft = folder.title
                 isRenaming = true
             }
+            Button("Change Icon…") {
+                showIconPicker = true
+            }
             Button("Delete Folder (Keep Tabs)", role: .destructive) {
                 browserState.deleteFolder(id: folder.id)
             }
@@ -731,6 +731,7 @@ struct TabRowItemView: View {
 
     @State private var isHovered = false
     @State private var isTargetedForDrop = false
+    @State private var showIconPicker = false
 
     private var isRetained: Bool {
         isPinned || tab.isPinned || browserState.isRetainedMember(tabID: tab.id)
@@ -740,7 +741,9 @@ struct TabRowItemView: View {
         HStack(spacing: 9) {
             // Favicon or Kind Icon
             Group {
-                if let fav = FaviconCache.shared.favicon(for: tab.urlString) {
+                if isRetained, let icon = tab.customIcon {
+                    AlpCustomIconView(icon: icon, size: 15, tint: theme.effectiveAccentColor)
+                } else if let fav = FaviconCache.shared.favicon(for: tab.urlString) {
                     Image(nsImage: fav)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -763,6 +766,9 @@ struct TabRowItemView: View {
                 }
             }
             .frame(width: 18, height: 18)
+            .alpIconPicker(isPresented: $showIconPicker, current: tab.customIcon) {
+                browserState.setTabIcon(id: tab.id, to: $0)
+            }
 
             // Title or Renaming TextField
             if renamingTabID == tab.id {
@@ -878,6 +884,11 @@ struct TabRowItemView: View {
                 renameDraft = tab.displayTitle
                 renamingTabID = tab.id
             }
+            if isRetained && tab.kind == .web {
+                Button("Change Icon…") {
+                    showIconPicker = true
+                }
+            }
             Button("Copy URL") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(tab.urlString, forType: .string)
@@ -891,12 +902,14 @@ struct TabRowItemView: View {
 }
 
 struct FavoriteTileView: View {
+    @EnvironmentObject var browserState: BrowserState
     let tab: TabItem
     let isSelected: Bool
     let theme: SpaceTheme
     let onSelect: () -> Void
 
     @State private var isHovered = false
+    @State private var showIconPicker = false
 
     var body: some View {
         Button(action: onSelect) {
@@ -908,7 +921,9 @@ struct FavoriteTileView: View {
                             .stroke(isSelected ? theme.effectiveAccentColor.opacity(0.8) : theme.pillBorderColor, lineWidth: isSelected ? 1.2 : 0.6)
                     )
 
-                if let fav = FaviconCache.shared.favicon(for: tab.urlString) {
+                if let icon = tab.customIcon {
+                    AlpCustomIconView(icon: icon, size: 21, tint: theme.foregroundColor)
+                } else if let fav = FaviconCache.shared.favicon(for: tab.urlString) {
                     Image(nsImage: fav)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -926,6 +941,25 @@ struct FavoriteTileView: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .help(tab.displayTitle)
+        .alpIconPicker(isPresented: $showIconPicker, current: tab.customIcon) {
+            browserState.setTabIcon(id: tab.id, to: $0)
+        }
+        .contextMenu {
+            Button("Remove from Favorites") {
+                browserState.toggleFavorite(tabID: tab.id)
+            }
+            Button("Change Icon…") {
+                showIconPicker = true
+            }
+            Button("Copy URL") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(tab.urlString, forType: .string)
+            }
+            Divider()
+            Button("Unload Tab") {
+                browserState.handleTabTrailingButtonAction(for: tab)
+            }
+        }
     }
 }
 

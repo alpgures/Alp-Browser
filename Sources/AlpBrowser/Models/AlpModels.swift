@@ -347,6 +347,12 @@ public enum SpaceThemeMode: String, CaseIterable, Identifiable, Codable, Sendabl
 
 // MARK: - Tab & Sidebar Hierarchy Models
 
+/// A user-chosen sidebar icon for a folder or a pinned tab. Unset (nil) means the default glyph / site favicon.
+public enum AlpCustomIcon: Codable, Equatable, Hashable, Sendable {
+    case emoji(String)
+    case symbol(String)   // SF Symbol name (see `AlpIconCatalog.symbols`)
+}
+
 public enum TabKind: Codable, Equatable, Hashable, Sendable {
     case web
     case canvas(UUID)
@@ -370,6 +376,7 @@ public struct TabItem: Identifiable, Codable, Equatable, Hashable, Sendable {
     public var lastActiveAt: Date
     public var kind: TabKind
     public var todayCategory: String?
+    public var customIcon: AlpCustomIcon?
 
     public init(
         id: UUID = UUID(),
@@ -387,7 +394,8 @@ public struct TabItem: Identifiable, Codable, Equatable, Hashable, Sendable {
         createdAt: Date = Date(),
         lastActiveAt: Date = Date(),
         kind: TabKind = .web,
-        todayCategory: String? = nil
+        todayCategory: String? = nil,
+        customIcon: AlpCustomIcon? = nil
     ) {
         self.id = id
         self.title = title
@@ -405,6 +413,7 @@ public struct TabItem: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.lastActiveAt = lastActiveAt
         self.kind = kind
         self.todayCategory = todayCategory
+        self.customIcon = customIcon
     }
 
     public var displayTitle: String {
@@ -458,17 +467,20 @@ public struct FolderItem: Identifiable, Codable, Equatable, Hashable, Sendable {
     public var title: String
     public var isExpanded: Bool
     public var children: [SidebarNode]
+    public var customIcon: AlpCustomIcon?
 
     public init(
         id: UUID = UUID(),
         title: String,
         isExpanded: Bool = false,
-        children: [SidebarNode] = []
+        children: [SidebarNode] = [],
+        customIcon: AlpCustomIcon? = nil
     ) {
         self.id = id
         self.title = title
         self.isExpanded = isExpanded
         self.children = children
+        self.customIcon = customIcon
     }
 }
 

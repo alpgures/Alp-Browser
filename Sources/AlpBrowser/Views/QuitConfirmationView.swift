@@ -9,6 +9,27 @@
 import SwiftUI
 import AppKit
 
+/// Pill button with explicit colors. The stock bordered styles follow the system appearance, which left dark text
+/// on this always-dark card in light mode (the run-18 Cancel button).
+private struct QuitCardButtonStyle: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(prominent ? Color.black.opacity(0.88) : Color.white)
+            .frame(maxWidth: .infinity, minHeight: 32)
+            .background(
+                Capsule().fill(prominent ? Color.white : Color.white.opacity(0.16))
+            )
+            .overlay(
+                Capsule().stroke(Color.white.opacity(prominent ? 0 : 0.35), lineWidth: 0.8)
+            )
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .contentShape(Capsule())
+    }
+}
+
 struct QuitConfirmationView: View {
     @EnvironmentObject var browserState: BrowserState
 
@@ -60,24 +81,19 @@ struct QuitConfirmationView: View {
 
                 Text(detail)
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.white.opacity(0.78))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 10) {
-                    Button(action: cancel) {
-                        Text("Cancel").frame(maxWidth: .infinity)
-                    }
-                    .keyboardShortcut(.cancelAction)
+                    Button("Cancel", action: cancel)
+                        .keyboardShortcut(.cancelAction)
+                        .buttonStyle(QuitCardButtonStyle(prominent: false))
 
-                    Button(action: confirm) {
-                        Text("Quit").frame(maxWidth: .infinity)
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .tint(browserState.activeTheme.effectiveAccentColor)
-                    .buttonStyle(.borderedProminent)
+                    Button("Quit", action: confirm)
+                        .keyboardShortcut(.defaultAction)
+                        .buttonStyle(QuitCardButtonStyle(prominent: true))
                 }
-                .controlSize(.large)
 
                 if !isDownloadsAlert {
                     Button(action: quitAndStopAsking) {
@@ -85,12 +101,12 @@ struct QuitConfirmationView: View {
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.white.opacity(0.82))
                 }
 
                 Text("Press ⌘Q again to quit")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.68))
             }
             .padding(22)
             .frame(width: 320)
@@ -100,6 +116,7 @@ struct QuitConfirmationView: View {
                     .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.8))
             )
             .shadow(color: .black.opacity(0.45), radius: 28, y: 10)
+            .environment(\.colorScheme, .dark)   // the card is always dark; keep any system control readable
         }
     }
 }
